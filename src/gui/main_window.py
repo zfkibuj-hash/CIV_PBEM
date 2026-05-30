@@ -534,18 +534,38 @@ class NewGameDialog(QDialog):
 
 
 class SettingsDialog(QDialog):
-    """Application settings dialog."""
+    """Application settings dialog with tabbed layout."""
 
     def __init__(self, config: AppConfig, parent=None):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("Ustawienia")
-        self.setMinimumWidth(500)
+        self.setMinimumSize(520, 420)
         self.setStyleSheet(DARK_STYLE)
         self._init_ui()
 
     def _init_ui(self):
+        from PyQt5.QtWidgets import QTabWidget
         layout = QVBoxLayout(self)
+
+        tabs = QTabWidget()
+        tabs.addTab(self._create_general_tab(), "Ogolne")
+        tabs.addTab(self._create_transport_tab(), "Transport")
+        tabs.addTab(self._create_notifications_tab(), "Powiadomienia")
+        layout.addWidget(tabs)
+
+        # Buttons at the bottom (always visible)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Save | QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self._save_settings)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    # --- Tab 1: General ---
+    def _create_general_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
 
         # Player info
         player_group = QGroupBox("Gracz")
@@ -566,43 +586,76 @@ class SettingsDialog(QDialog):
         path_layout.addWidget(btn_browse)
         layout.addWidget(path_group)
 
-        # Transport
-        transport_group = QGroupBox("Transport plikow")
-        transport_form = QFormLayout(transport_group)
+        # Check interval
+        interval_group = QGroupBox("Sprawdzanie")
+        interval_form = QFormLayout(interval_group)
+        self.check_interval = QSpinBox()
+        self.check_interval.setRange(1, 60)
+        self.check_interval.setValue(self.config.check_interval_minutes)
+        self.check_interval.setSuffix(" min")
+        interval_form.addRow("Sprawdzaj co:", self.check_interval)
+        layout.addWidget(interval_group)
+
+        layout.addStretch()
+        return tab
+
+    # --- Tab 2: Transport ---
+    def _create_transport_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
 
         tc = self.config.transport_config
+
+        # Transport type selector
+        type_group = QGroupBox("Metoda transportu")
+        type_form = QFormLayout(type_group)
         self.transport_type = QComboBox()
         self.transport_type.addItems(["ftp", "sftp", "webdav", "email"])
         self.transport_type.setCurrentText(tc.get("type", "ftp"))
         self.transport_type.currentTextChanged.connect(self._on_transport_type_changed)
-        transport_form.addRow("Typ:", self.transport_type)
+        type_form.addRow("Typ:", self.transport_type)
+        layout.addWidget(type_group)
+
+        # File-based transport settings (FTP/SFTP/WebDAV)
+        self.file_transport_group = QGroupBox("Serwer plikow (FTP/SFTP/WebDAV)")
+        file_form = QFormLayout(self.file_transport_group)
 
         self.transport_host = QLineEdit(tc.get("host", ""))
         self.transport_host.setPlaceholderText("np. ftp.mojserwer.pl")
-        transport_form.addRow("Host:", self.transport_host)
+        file_form.addRow("Host:", self.transport_host)
 
         self.transport_port = QSpinBox()
         self.transport_port.setRange(1, 65535)
         self.transport_port.setValue(tc.get("port", 21))
-        transport_form.addRow("Port:", self.transport_port)
+        file_form.addRow("Port:", self.transport_port)
 
         self.transport_user = QLineEdit(tc.get("username", ""))
-        transport_form.addRow("Login:", self.transport_user)
+        file_form.addRow("Login:", self.transport_user)
 
         self.transport_pass = QLineEdit(tc.get("password", ""))
         self.transport_pass.setEchoMode(QLineEdit.Password)
-        transport_form.addRow("Haslo:", self.transport_pass)
+        file_form.addRow("Haslo:", self.transport_pass)
 
         self.transport_dir = QLineEdit(tc.get("remote_dir", "/civ4pbem"))
-        transport_form.addRow("Folder zdalny:", self.transport_dir)
+        file_form.addRow("Folder zdalny:", self.transport_dir)
 
-        layout.addWidget(transport_group)
+        layout.addWidget(self.file_transport_group)
 
-        # Email transport settings (shown only when type=email)
-        self.email_transport_group = QGroupBox("Transport email (SMTP + IMAP)")
+        # Email transport settings (SMTP + IMAP)
+        self.email_transport_group = QGroupBox("Transport email (SMTP wysylka + IMAP odbiór)")
         email_form = QFormLayout(self.email_transport_group)
 
         ec = tc.get("email", {})
+
+        self.et_mode = QComboBox()
+        self.et_mode.addItems(["shared", "individual"])
+        self.et_mode.setCurrentText(ec.get("mode", "shared"))
+        email_form.addRow("Tryb:", self.et_mode)
+
+        self.et_shared_email = QLineEdit(ec.get("shared_email", ""))
+        self.et_shared_email.setPlaceholderText("wspoldzielona skrzynka, np. civ4pbem@...")
+        email_form.addRow("Skrzynka wspolna:", self.et_shared_email)
+
         self.et_smtp_host = QLineEdit(ec.get("smtp_host", ""))
         self.et_smtp_host.setPlaceholderText("np. smtp.gmail.com")
         email_form.addRow("SMTP host:", self.et_smtp_host)
@@ -635,25 +688,23 @@ class SettingsDialog(QDialog):
         self.et_imap_pass.setEchoMode(QLineEdit.Password)
         email_form.addRow("IMAP haslo:", self.et_imap_pass)
 
-        self.et_mode = QComboBox()
-        self.et_mode.addItems(["shared", "individual"])
-        self.et_mode.setCurrentText(ec.get("mode", "shared"))
-        email_form.addRow("Tryb:", self.et_mode)
-
-        self.et_shared_email = QLineEdit(ec.get("shared_email", ""))
-        self.et_shared_email.setPlaceholderText("wspoldzielona skrzynka, np. civ4pbem@...")
-        email_form.addRow("Skrzynka:", self.et_shared_email)
-
         self.et_from_address = QLineEdit(ec.get("from_address", ""))
         self.et_from_address.setPlaceholderText("adres nadawcy (opcjonalnie)")
         email_form.addRow("Od:", self.et_from_address)
 
         layout.addWidget(self.email_transport_group)
 
-        # Show/hide email settings based on current type
+        # Show/hide based on current type
         self._on_transport_type_changed(self.transport_type.currentText())
 
-        # SMTP
+        layout.addStretch()
+        return tab
+
+    # --- Tab 3: Notifications ---
+    def _create_notifications_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
         smtp_group = QGroupBox("Powiadomienia email (SMTP)")
         smtp_form = QFormLayout(smtp_group)
 
@@ -680,34 +731,24 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(smtp_group)
 
-        # Check interval
-        interval_group = QGroupBox("Sprawdzanie")
-        interval_form = QFormLayout(interval_group)
-        self.check_interval = QSpinBox()
-        self.check_interval.setRange(1, 60)
-        self.check_interval.setValue(self.config.check_interval_minutes)
-        self.check_interval.setSuffix(" min")
-        interval_form.addRow("Sprawdzaj co:", self.check_interval)
-        layout.addWidget(interval_group)
-
-        # Buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.Save | QDialogButtonBox.Cancel
+        info_label = QLabel(
+            "Powiadomienia email sa NIEZALEZNE od transportu.\n"
+            "Sluza do informowania nastepnego gracza ze czeka na niego tura.\n"
+            "Jesli uzywasz transportu email, mozesz tu podac te same dane."
         )
-        buttons.accepted.connect(self._save_settings)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #9e9e9e; font-size: 9pt; padding: 8px;")
+        layout.addWidget(info_label)
 
+        layout.addStretch()
+        return tab
+
+    # --- Logic ---
     def _on_transport_type_changed(self, transport_type: str):
-        """Show/hide email transport settings based on selected type."""
+        """Show/hide transport panels based on selected type."""
         is_email = transport_type == "email"
+        self.file_transport_group.setVisible(not is_email)
         self.email_transport_group.setVisible(is_email)
-        # Hide file-based transport fields when email is selected
-        self.transport_host.setEnabled(not is_email)
-        self.transport_port.setEnabled(not is_email)
-        self.transport_user.setEnabled(not is_email)
-        self.transport_pass.setEnabled(not is_email)
-        self.transport_dir.setEnabled(not is_email)
 
     def _browse_path(self):
         path = QFileDialog.getExistingDirectory(
