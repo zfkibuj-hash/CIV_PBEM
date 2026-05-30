@@ -565,8 +565,9 @@ class SettingsDialog(QDialog):
 
         tc = self.config.transport_config
         self.transport_type = QComboBox()
-        self.transport_type.addItems(["ftp", "sftp", "webdav"])
+        self.transport_type.addItems(["ftp", "sftp", "webdav", "email"])
         self.transport_type.setCurrentText(tc.get("type", "ftp"))
+        self.transport_type.currentTextChanged.connect(self._on_transport_type_changed)
         transport_form.addRow("Typ:", self.transport_type)
 
         self.transport_host = QLineEdit(tc.get("host", ""))
@@ -589,6 +590,61 @@ class SettingsDialog(QDialog):
         transport_form.addRow("Folder zdalny:", self.transport_dir)
 
         layout.addWidget(transport_group)
+
+        # Email transport settings (shown only when type=email)
+        self.email_transport_group = QGroupBox("Transport email (SMTP + IMAP)")
+        email_form = QFormLayout(self.email_transport_group)
+
+        ec = tc.get("email", {})
+        self.et_smtp_host = QLineEdit(ec.get("smtp_host", ""))
+        self.et_smtp_host.setPlaceholderText("np. smtp.gmail.com")
+        email_form.addRow("SMTP host:", self.et_smtp_host)
+
+        self.et_smtp_port = QSpinBox()
+        self.et_smtp_port.setRange(1, 65535)
+        self.et_smtp_port.setValue(ec.get("smtp_port", 587))
+        email_form.addRow("SMTP port:", self.et_smtp_port)
+
+        self.et_smtp_user = QLineEdit(ec.get("smtp_user", ""))
+        email_form.addRow("SMTP login:", self.et_smtp_user)
+
+        self.et_smtp_pass = QLineEdit(ec.get("smtp_password", ""))
+        self.et_smtp_pass.setEchoMode(QLineEdit.Password)
+        email_form.addRow("SMTP haslo:", self.et_smtp_pass)
+
+        self.et_imap_host = QLineEdit(ec.get("imap_host", ""))
+        self.et_imap_host.setPlaceholderText("np. imap.gmail.com")
+        email_form.addRow("IMAP host:", self.et_imap_host)
+
+        self.et_imap_port = QSpinBox()
+        self.et_imap_port.setRange(1, 65535)
+        self.et_imap_port.setValue(ec.get("imap_port", 993))
+        email_form.addRow("IMAP port:", self.et_imap_port)
+
+        self.et_imap_user = QLineEdit(ec.get("imap_user", ""))
+        email_form.addRow("IMAP login:", self.et_imap_user)
+
+        self.et_imap_pass = QLineEdit(ec.get("imap_password", ""))
+        self.et_imap_pass.setEchoMode(QLineEdit.Password)
+        email_form.addRow("IMAP haslo:", self.et_imap_pass)
+
+        self.et_mode = QComboBox()
+        self.et_mode.addItems(["shared", "individual"])
+        self.et_mode.setCurrentText(ec.get("mode", "shared"))
+        email_form.addRow("Tryb:", self.et_mode)
+
+        self.et_shared_email = QLineEdit(ec.get("shared_email", ""))
+        self.et_shared_email.setPlaceholderText("wspoldzielona skrzynka, np. civ4pbem@...")
+        email_form.addRow("Skrzynka:", self.et_shared_email)
+
+        self.et_from_address = QLineEdit(ec.get("from_address", ""))
+        self.et_from_address.setPlaceholderText("adres nadawcy (opcjonalnie)")
+        email_form.addRow("Od:", self.et_from_address)
+
+        layout.addWidget(self.email_transport_group)
+
+        # Show/hide email settings based on current type
+        self._on_transport_type_changed(self.transport_type.currentText())
 
         # SMTP
         smtp_group = QGroupBox("Powiadomienia email (SMTP)")
@@ -635,6 +691,17 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+    def _on_transport_type_changed(self, transport_type: str):
+        """Show/hide email transport settings based on selected type."""
+        is_email = transport_type == "email"
+        self.email_transport_group.setVisible(is_email)
+        # Hide file-based transport fields when email is selected
+        self.transport_host.setEnabled(not is_email)
+        self.transport_port.setEnabled(not is_email)
+        self.transport_user.setEnabled(not is_email)
+        self.transport_pass.setEnabled(not is_email)
+        self.transport_dir.setEnabled(not is_email)
+
     def _browse_path(self):
         path = QFileDialog.getExistingDirectory(
             self, "Wybierz folder save'ow", self.path_edit.text()
@@ -647,14 +714,32 @@ class SettingsDialog(QDialog):
         self.config.set("player_email", self.player_email_edit.text().strip())
         self.config.save_path = self.path_edit.text().strip()
         self.config.set("check_interval_minutes", self.check_interval.value())
-        self.config.set("transport", {
+
+        transport_data = {
             "type": self.transport_type.currentText(),
             "host": self.transport_host.text().strip(),
             "port": self.transport_port.value(),
             "username": self.transport_user.text().strip(),
             "password": self.transport_pass.text(),
             "remote_dir": self.transport_dir.text().strip(),
-        })
+            "email": {
+                "smtp_host": self.et_smtp_host.text().strip(),
+                "smtp_port": self.et_smtp_port.value(),
+                "smtp_user": self.et_smtp_user.text().strip(),
+                "smtp_password": self.et_smtp_pass.text(),
+                "smtp_use_tls": True,
+                "imap_host": self.et_imap_host.text().strip(),
+                "imap_port": self.et_imap_port.value(),
+                "imap_user": self.et_imap_user.text().strip(),
+                "imap_password": self.et_imap_pass.text(),
+                "imap_use_ssl": True,
+                "mode": self.et_mode.currentText(),
+                "shared_email": self.et_shared_email.text().strip(),
+                "from_address": self.et_from_address.text().strip(),
+            },
+        }
+        self.config.set("transport", transport_data)
+
         self.config.set("smtp", {
             "host": self.smtp_host.text().strip(),
             "port": self.smtp_port.value(),

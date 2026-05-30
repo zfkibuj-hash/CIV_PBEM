@@ -14,6 +14,7 @@ from src.transport.base import BaseTransport
 from src.transport.ftp_transport import FTPTransport
 from src.transport.sftp_transport import SFTPTransport
 from src.transport.webdav_transport import WebDAVTransport
+from src.transport.email_transport import EmailTransport
 from src.notifier.email_notifier import EmailNotifier
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,30 @@ class AppController(QObject):
         username = tc.get("username", "")
         password = tc.get("password", "")
         remote_dir = tc.get("remote_dir", "/civ4pbem")
+
+        if transport_type == "email":
+            # Email transport uses SMTP/IMAP config
+            ec = tc.get("email", {})
+            smtp_host = ec.get("smtp_host", "")
+            if not smtp_host:
+                self._transport = None
+                return
+            self._transport = EmailTransport(
+                smtp_host=smtp_host,
+                smtp_port=ec.get("smtp_port", 587),
+                smtp_user=ec.get("smtp_user", ""),
+                smtp_password=ec.get("smtp_password", ""),
+                smtp_use_tls=ec.get("smtp_use_tls", True),
+                imap_host=ec.get("imap_host", ""),
+                imap_port=ec.get("imap_port", 993),
+                imap_user=ec.get("imap_user", ""),
+                imap_password=ec.get("imap_password", ""),
+                imap_use_ssl=ec.get("imap_use_ssl", True),
+                mode=ec.get("mode", "shared"),
+                shared_email=ec.get("shared_email", ""),
+                from_address=ec.get("from_address", ""),
+            )
+            return
 
         if not host:
             self._transport = None
@@ -110,7 +135,18 @@ class AppController(QObject):
             return False, "To nie Twoja kolej!"
 
         remote_filename = game.get_save_filename(my_name)
-        success = self._transport.upload(local_path, remote_filename, game.name)
+
+        # For email transport in individual mode, pass the next player's email
+        next_player = game.next_player
+        if isinstance(self._transport, EmailTransport) and self._transport.mode == "individual":
+            if next_player:
+                success = self._transport.upload(
+                    local_path, remote_filename, game.name, to_email=next_player.email
+                )
+            else:
+                return False, "Brak nastepnego gracza"
+        else:
+            success = self._transport.upload(local_path, remote_filename, game.name)
 
         if success:
             # Remember who's next before advancing
