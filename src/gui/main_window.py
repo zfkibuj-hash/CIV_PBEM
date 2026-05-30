@@ -958,6 +958,7 @@ class SettingsDialog(QDialog):
 
         self.syno_download_password = QLineEdit(snc.get("download_password", ""))
         self.syno_download_password.setEchoMode(QLineEdit.Password)
+        self.syno_download_password.setPlaceholderText("puste = takie samo jak uploadu")
         syno_form.addRow("Haslo pobierania:", self.syno_download_password)
 
         layout.addWidget(self.synology_transport_group)
@@ -979,7 +980,7 @@ class SettingsDialog(QDialog):
 
         sc = self.config.smtp_config
         self.smtp_host = QLineEdit(sc.get("host", ""))
-        self.smtp_host.setPlaceholderText("np. smtp.gmail.com")
+        self.smtp_host.setPlaceholderText("puste = z transportu email")
         smtp_form.addRow("Host SMTP:", self.smtp_host)
 
         self.smtp_port = QSpinBox()
@@ -988,22 +989,24 @@ class SettingsDialog(QDialog):
         smtp_form.addRow("Port:", self.smtp_port)
 
         self.smtp_user = QLineEdit(sc.get("username", ""))
+        self.smtp_user.setPlaceholderText("puste = z transportu email")
         smtp_form.addRow("Login:", self.smtp_user)
 
         self.smtp_pass = QLineEdit(sc.get("password", ""))
         self.smtp_pass.setEchoMode(QLineEdit.Password)
+        self.smtp_pass.setPlaceholderText("puste = z transportu email")
         smtp_form.addRow("Haslo:", self.smtp_pass)
 
         self.smtp_from = QLineEdit(sc.get("from_address", ""))
-        self.smtp_from.setPlaceholderText("adres nadawcy")
+        self.smtp_from.setPlaceholderText("puste = login SMTP")
         smtp_form.addRow("Od:", self.smtp_from)
 
         layout.addWidget(smtp_group)
 
         info_label = QLabel(
-            "Powiadomienia email sa NIEZALEZNE od transportu.\n"
-            "Sluza do informowania nastepnego gracza ze czeka na niego tura.\n"
-            "Jesli uzywasz transportu email, mozesz tu podac te same dane."
+            "Jesli zostawisz pola puste, dane zostana pobrane\n"
+            "z konfiguracji transportu email (jesli jest ustawiony).\n"
+            "Mozesz tez podac inne dane niz transport."
         )
         info_label.setWordWrap(True)
         info_label.setStyleSheet("color: #9e9e9e; font-size: 9pt; padding: 8px;")

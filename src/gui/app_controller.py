@@ -76,11 +76,14 @@ class AppController(QObject):
             if not upload_url:
                 self._transport = None
                 return
+            # Fallback: if download_password is empty, use upload_password
+            upload_pw = sc.get("upload_password", "")
+            download_pw = sc.get("download_password", "") or upload_pw
             self._transport = SynologySharingTransport(
                 upload_url=upload_url,
                 download_url=sc.get("download_url", ""),
-                upload_password=sc.get("upload_password", ""),
-                download_password=sc.get("download_password", ""),
+                upload_password=upload_pw,
+                download_password=download_pw,
                 ignore_ssl=ignore_ssl,
             )
             return
@@ -108,17 +111,35 @@ class AppController(QObject):
             )
 
     def _init_notifier(self):
-        """Initialize email notifier."""
+        """Initialize email notifier.
+
+        Fallback logic: if SMTP notification fields are empty, try to
+        reuse credentials from email transport config (same server/login).
+        """
         sc = self.config.smtp_config
-        if sc.get("host"):
-            self._notifier = EmailNotifier(
-                host=sc["host"],
-                port=sc.get("port", 587),
-                username=sc.get("username", ""),
-                password=sc.get("password", ""),
-                use_tls=sc.get("use_tls", True),
-                from_address=sc.get("from_address", ""),
-            )
+        tc = self.config.transport_config
+        ec = tc.get("email", {})
+
+        # Resolve SMTP host: notification config first, fallback to email transport
+        smtp_host = sc.get("host", "") or ec.get("smtp_host", "")
+        if not smtp_host:
+            self._notifier = None
+            return
+
+        # Fallback: use email transport credentials if notification ones are empty
+        smtp_port = sc.get("port", 0) or ec.get("smtp_port", 587)
+        smtp_user = sc.get("username", "") or ec.get("smtp_user", "")
+        smtp_pass = sc.get("password", "") or ec.get("smtp_password", "")
+        from_addr = sc.get("from_address", "") or ec.get("from_address", "") or smtp_user
+
+        self._notifier = EmailNotifier(
+            host=smtp_host,
+            port=smtp_port,
+            username=smtp_user,
+            password=smtp_pass,
+            use_tls=sc.get("use_tls", True),
+            from_address=from_addr,
+        )
 
     def reload_config(self):
         """Reload transport and notifier after settings change."""
