@@ -148,6 +148,9 @@ def main():
     controller.status_changed.connect(window.status_label.setText)
     controller.games_updated.connect(window._load_games)
 
+    # Reload controller when settings are saved (transport/notifier may have changed)
+    window.settings_saved.connect(controller.reload_config)
+
     # --- Wire up window actions to controller ---
     def handle_download():
         if window.current_game:

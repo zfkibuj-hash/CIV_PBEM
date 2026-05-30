@@ -539,10 +539,14 @@ class MainWindow(QMainWindow):
                 self.games.append(game)
                 self._refresh_game_list()
 
+    settings_saved = pyqtSignal()
+
     def _on_settings(self):
         """Open settings dialog."""
         dialog = SettingsDialog(self.config, self)
-        dialog.exec_()
+        if dialog.exec_() == QDialog.Accepted:
+            self.apply_theme()
+            self.settings_saved.emit()
 
     def _on_download(self):
         """Download save from remote."""
