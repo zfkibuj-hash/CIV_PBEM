@@ -803,7 +803,7 @@ class SettingsDialog(QDialog):
         type_group = QGroupBox("Metoda transportu")
         type_form = QFormLayout(type_group)
         self.transport_type = QComboBox()
-        self.transport_type.addItems(["ftp", "sftp", "webdav", "email"])
+        self.transport_type.addItems(["ftp", "sftp", "webdav", "email", "synology"])
         self.transport_type.setCurrentText(tc.get("type", "ftp"))
         self.transport_type.currentTextChanged.connect(self._on_transport_type_changed)
         type_form.addRow("Typ:", self.transport_type)
@@ -888,6 +888,25 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(self.email_transport_group)
 
+        # Synology Sharing Links settings
+        self.synology_transport_group = QGroupBox("Synology - linki udostepniania")
+        syno_form = QFormLayout(self.synology_transport_group)
+
+        snc = tc.get("synology", {})
+        self.syno_upload_url = QLineEdit(snc.get("upload_url", ""))
+        self.syno_upload_url.setPlaceholderText("https://twoj.synology.me:5001/sharing/XXXXXXX")
+        syno_form.addRow("URL uploadu:", self.syno_upload_url)
+
+        self.syno_download_url = QLineEdit(snc.get("download_url", ""))
+        self.syno_download_url.setPlaceholderText("https://gofile.me/XXXXX/XXXXXXX")
+        syno_form.addRow("URL pobierania:", self.syno_download_url)
+
+        self.syno_password = QLineEdit(snc.get("password", ""))
+        self.syno_password.setEchoMode(QLineEdit.Password)
+        syno_form.addRow("Haslo:", self.syno_password)
+
+        layout.addWidget(self.synology_transport_group)
+
         # Show/hide based on current type
         self._on_transport_type_changed(self.transport_type.currentText())
 
@@ -941,9 +960,9 @@ class SettingsDialog(QDialog):
     # --- Logic ---
     def _on_transport_type_changed(self, transport_type: str):
         """Show/hide transport panels based on selected type."""
-        is_email = transport_type == "email"
-        self.file_transport_group.setVisible(not is_email)
-        self.email_transport_group.setVisible(is_email)
+        self.file_transport_group.setVisible(transport_type in ("ftp", "sftp", "webdav"))
+        self.email_transport_group.setVisible(transport_type == "email")
+        self.synology_transport_group.setVisible(transport_type == "synology")
 
     def _browse_path(self):
         path = QFileDialog.getExistingDirectory(
@@ -980,6 +999,11 @@ class SettingsDialog(QDialog):
                 "mode": self.et_mode.currentText(),
                 "shared_email": self.et_shared_email.text().strip(),
                 "from_address": self.et_from_address.text().strip(),
+            },
+            "synology": {
+                "upload_url": self.syno_upload_url.text().strip(),
+                "download_url": self.syno_download_url.text().strip(),
+                "password": self.syno_password.text(),
             },
         }
         self.config.set("transport", transport_data)
