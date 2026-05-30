@@ -1,5 +1,5 @@
 """
-Main application window - PyQt5 modern dark theme GUI.
+Main application window - PyQt5 GUI with dark/light theme support.
 """
 import logging
 from pathlib import Path
@@ -10,7 +10,8 @@ from PyQt5.QtWidgets import (
     QPushButton, QListWidget, QListWidgetItem, QGroupBox,
     QLineEdit, QSpinBox, QComboBox, QFileDialog, QMessageBox,
     QSystemTrayIcon, QMenu, QAction, QApplication, QFormLayout,
-    QDialog, QDialogButtonBox, QTextEdit, QSplitter, QFrame
+    QDialog, QDialogButtonBox, QTextEdit, QSplitter, QFrame,
+    QCheckBox
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QIcon, QFont, QColor
@@ -27,6 +28,9 @@ QMainWindow, QWidget {
     color: #e0e0e0;
     font-family: "Segoe UI", sans-serif;
     font-size: 10pt;
+}
+QWidget#sidebar {
+    background-color: #252536;
 }
 QGroupBox {
     border: 1px solid #555;
@@ -153,6 +157,151 @@ QTabBar::tab:hover:!selected {
 """
 
 
+LIGHT_STYLE = """
+QMainWindow, QWidget {
+    background-color: #f5f5f5;
+    color: #212121;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 10pt;
+}
+QWidget#sidebar {
+    background-color: #e0e0e0;
+}
+QGroupBox {
+    border: 1px solid #bdbdbd;
+    border-radius: 4px;
+    margin-top: 8px;
+    padding-top: 12px;
+    font-weight: bold;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px;
+}
+QPushButton {
+    background-color: #ffffff;
+    border: 1px solid #bdbdbd;
+    border-radius: 4px;
+    padding: 6px 16px;
+    min-height: 24px;
+    color: #212121;
+}
+QPushButton:hover {
+    background-color: #e3f2fd;
+    border-color: #1976d2;
+}
+QPushButton:pressed {
+    background-color: #bbdefb;
+}
+QPushButton#btn_download {
+    background-color: #4caf50;
+    border-color: #388e3c;
+    color: white;
+    font-weight: bold;
+}
+QPushButton#btn_download:hover {
+    background-color: #66bb6a;
+}
+QPushButton#btn_upload {
+    background-color: #1976d2;
+    border-color: #1565c0;
+    color: white;
+    font-weight: bold;
+}
+QPushButton#btn_upload:hover {
+    background-color: #42a5f5;
+}
+QListWidget {
+    background-color: #ffffff;
+    border: 1px solid #bdbdbd;
+    border-radius: 4px;
+    padding: 4px;
+}
+QListWidget::item {
+    padding: 8px;
+    border-radius: 3px;
+}
+QListWidget::item:selected {
+    background-color: #e8f5e9;
+    border-left: 3px solid #4caf50;
+}
+QListWidget::item:hover {
+    background-color: #f5f5f5;
+}
+QLineEdit, QSpinBox, QComboBox {
+    background-color: #ffffff;
+    border: 1px solid #bdbdbd;
+    border-radius: 3px;
+    padding: 4px 8px;
+    min-height: 20px;
+    color: #212121;
+}
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+    border-color: #1976d2;
+}
+QLabel#status_bar {
+    background-color: #e0e0e0;
+    padding: 4px 12px;
+    font-size: 9pt;
+    color: #616161;
+}
+QLabel#banner_your_turn {
+    background-color: #4caf50;
+    color: white;
+    padding: 8px 16px;
+    font-weight: bold;
+    font-size: 11pt;
+}
+QLabel#banner_waiting {
+    background-color: #eeeeee;
+    color: #616161;
+    padding: 8px 16px;
+    font-size: 10pt;
+}
+QTextEdit {
+    background-color: #ffffff;
+    border: 1px solid #bdbdbd;
+    border-radius: 4px;
+    color: #616161;
+    font-size: 9pt;
+}
+QSplitter::handle {
+    background-color: #bdbdbd;
+}
+QTabWidget::pane {
+    border: 1px solid #bdbdbd;
+    background-color: #f5f5f5;
+}
+QTabBar::tab {
+    background-color: #e0e0e0;
+    color: #212121;
+    border: 1px solid #bdbdbd;
+    border-bottom: none;
+    padding: 8px 20px;
+    margin-right: 2px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+QTabBar::tab:selected {
+    background-color: #f5f5f5;
+    color: #1976d2;
+    border-bottom: 2px solid #1976d2;
+}
+QTabBar::tab:hover:!selected {
+    background-color: #eeeeee;
+}
+QCheckBox {
+    color: #212121;
+}
+"""
+
+
+def get_style_for_theme(dark: bool) -> str:
+    """Return the appropriate stylesheet."""
+    return DARK_STYLE if dark else LIGHT_STYLE
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
 
@@ -166,11 +315,16 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Civ4 PBEM Manager v1.0")
         self.setMinimumSize(800, 600)
-        self.setStyleSheet(DARK_STYLE)
+        self.apply_theme()
 
         self._init_ui()
         self._load_games()
         self._setup_timer()
+
+    def apply_theme(self):
+        """Apply dark or light theme based on config."""
+        is_dark = self.config.get("dark_mode", True)
+        self.setStyleSheet(get_style_for_theme(is_dark))
 
     def _init_ui(self):
         central = QWidget()
@@ -182,7 +336,7 @@ class MainWindow(QMainWindow):
         # --- Left sidebar: game list ---
         sidebar = QWidget()
         sidebar.setFixedWidth(240)
-        sidebar.setStyleSheet("background-color: #252536;")
+        sidebar.setObjectName("sidebar")
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(8, 12, 8, 8)
 
@@ -619,6 +773,14 @@ class SettingsDialog(QDialog):
         interval_form.addRow("Sprawdzaj co:", self.check_interval)
         layout.addWidget(interval_group)
 
+        # Appearance
+        appearance_group = QGroupBox("Wyglad")
+        appearance_form = QFormLayout(appearance_group)
+        self.dark_mode_check = QCheckBox("Tryb ciemny")
+        self.dark_mode_check.setChecked(self.config.get("dark_mode", True))
+        appearance_form.addRow(self.dark_mode_check)
+        layout.addWidget(appearance_group)
+
         layout.addStretch()
         return tab
 
@@ -795,6 +957,7 @@ class SettingsDialog(QDialog):
         self.config.set("player_email", self.player_email_edit.text().strip())
         self.config.save_path = self.path_edit.text().strip()
         self.config.set("check_interval_minutes", self.check_interval.value())
+        self.config.set("dark_mode", self.dark_mode_check.isChecked())
 
         transport_data = {
             "type": self.transport_type.currentText(),
@@ -829,4 +992,10 @@ class SettingsDialog(QDialog):
             "use_tls": True,
             "from_address": self.smtp_from.text().strip(),
         })
+
+        # Apply theme change immediately to parent window
+        parent = self.parent()
+        if parent and hasattr(parent, 'apply_theme'):
+            parent.apply_theme()
+
         self.accept()
