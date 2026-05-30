@@ -18,6 +18,9 @@ from PyQt5.QtGui import QIcon, QFont, QColor
 
 from src.config import AppConfig
 from src.models.game import Game, Player
+from src.i18n import t, get_i18n, set_language, LANGUAGES
+from src.models.statistics import calculate_game_stats, format_duration
+from src.launcher import detect_civ4_path, launch_civ4, is_civ4_running
 
 logger = logging.getLogger(__name__)
 
@@ -369,6 +372,10 @@ class MainWindow(QMainWindow):
         self.btn_game_transport.clicked.connect(self._on_game_transport)
         sidebar_layout.addWidget(self.btn_game_transport)
 
+        self.btn_stats = QPushButton(t("statistics"))
+        self.btn_stats.clicked.connect(self._on_statistics)
+        sidebar_layout.addWidget(self.btn_stats)
+
         btn_settings = QPushButton("Ustawienia")
         btn_settings.clicked.connect(self._on_settings)
         sidebar_layout.addWidget(btn_settings)
@@ -429,6 +436,12 @@ class MainWindow(QMainWindow):
         self.btn_check_now.clicked.connect(self._on_manual_check)
         self.btn_check_now.setMinimumHeight(44)
         actions_layout.addWidget(self.btn_check_now)
+
+        self.btn_launch_civ4 = QPushButton(t("launch_civ4"))
+        self.btn_launch_civ4.clicked.connect(self._on_launch_civ4)
+        self.btn_launch_civ4.setMinimumHeight(44)
+        self.btn_launch_civ4.setStyleSheet("color: #ff9800; border-color: #ff9800;")
+        actions_layout.addWidget(self.btn_launch_civ4)
 
         content_layout.addLayout(actions_layout)
 
@@ -797,6 +810,23 @@ class MainWindow(QMainWindow):
         # The actual check logic will be connected in main.py
         self._on_check_timer()
 
+    def _on_statistics(self):
+        """Show game statistics dialog."""
+        if not self.current_game:
+            QMessageBox.information(self, t("info"), t("stats_no_game"))
+            return
+        dialog = GameStatsDialog(self.config, self.current_game, self)
+        dialog.exec_()
+
+    def _on_launch_civ4(self):
+        """Manually launch Civ4 BTS."""
+        civ4_path = self.config.civ4_path
+        if not civ4_path:
+            QMessageBox.warning(self, t("error"), t("civ4_not_found"))
+            return
+        success, msg_key = launch_civ4(civ4_path)
+        self.status_label.setText(t(msg_key) if msg_key in ("civ4_launched", "civ4_already_running", "civ4_not_found") else msg_key)
+
     def _on_check_timer(self):
         """Periodic check for new saves."""
         self.status_label.setText("Sprawdzanie nowych save'ow...")
@@ -993,8 +1023,8 @@ class SettingsDialog(QDialog):
         interval_form.addRow("Sprawdzaj co:", self.check_interval)
         layout.addWidget(interval_group)
 
-        # Appearance
-        appearance_group = QGroupBox("Wyglad")
+        # Appearance & Language
+        appearance_group = QGroupBox("Wyglad i jezyk")
         appearance_form = QFormLayout(appearance_group)
         self.dark_mode_check = QCheckBox("Tryb ciemny")
         self.dark_mode_check.setChecked(self.config.get("dark_mode", True))
@@ -1008,7 +1038,40 @@ class SettingsDialog(QDialog):
         )
         appearance_form.addRow(self.auto_send_check)
 
+        # Language selector
+        self.language_combo = QComboBox()
+        self.language_combo.addItem("Polski", "pl")
+        self.language_combo.addItem("English", "en")
+        current_lang = self.config.language
+        idx = 0 if current_lang == "pl" else 1
+        self.language_combo.setCurrentIndex(idx)
+        appearance_form.addRow(t("language"), self.language_combo)
+
         layout.addWidget(appearance_group)
+
+        # Auto-launch Civ4
+        launch_group = QGroupBox("Civ4 Beyond the Sword")
+        launch_form = QFormLayout(launch_group)
+
+        self.auto_launch_check = QCheckBox(t("auto_launch"))
+        self.auto_launch_check.setChecked(self.config.auto_launch)
+        launch_form.addRow(self.auto_launch_check)
+
+        civ4_path_layout = QHBoxLayout()
+        self.civ4_path_edit = QLineEdit(self.config.civ4_path)
+        self.civ4_path_edit.setPlaceholderText("C:\\...\\Civ4BeyondSword.exe")
+        civ4_path_layout.addWidget(self.civ4_path_edit)
+
+        btn_browse_civ4 = QPushButton(t("browse"))
+        btn_browse_civ4.clicked.connect(self._browse_civ4_path)
+        civ4_path_layout.addWidget(btn_browse_civ4)
+
+        btn_detect_civ4 = QPushButton(t("detect_civ4"))
+        btn_detect_civ4.clicked.connect(self._detect_civ4)
+        civ4_path_layout.addWidget(btn_detect_civ4)
+
+        launch_form.addRow(t("civ4_path"), civ4_path_layout)
+        layout.addWidget(launch_group)
 
         layout.addStretch()
         return tab
@@ -1193,6 +1256,24 @@ class SettingsDialog(QDialog):
         if path:
             self.path_edit.setText(path)
 
+    def _browse_civ4_path(self):
+        """Browse for Civ4 BTS executable."""
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Wybierz Civ4BeyondSword.exe", self.civ4_path_edit.text(),
+            "Executable (*.exe);;All Files (*)"
+        )
+        if filepath:
+            self.civ4_path_edit.setText(filepath)
+
+    def _detect_civ4(self):
+        """Auto-detect Civ4 BTS installation path."""
+        detected = detect_civ4_path()
+        if detected:
+            self.civ4_path_edit.setText(detected)
+            QMessageBox.information(self, "OK", t("civ4_detected", path=detected))
+        else:
+            QMessageBox.information(self, t("info"), t("civ4_not_detected"))
+
     def _save_settings(self):
         self.config.player_name = self.player_name_edit.text().strip()
         self.config.set("player_email", self.player_email_edit.text().strip())
@@ -1200,6 +1281,15 @@ class SettingsDialog(QDialog):
         self.config.set("check_interval_minutes", self.check_interval.value())
         self.config.set("dark_mode", self.dark_mode_check.isChecked())
         self.config.set("auto_send", self.auto_send_check.isChecked())
+
+        # Language
+        new_lang = self.language_combo.currentData()
+        self.config.language = new_lang
+        set_language(new_lang)
+
+        # Auto-launch Civ4
+        self.config.auto_launch = self.auto_launch_check.isChecked()
+        self.config.civ4_path = self.civ4_path_edit.text().strip()
 
         transport_data = {
             "type": self.transport_type.currentText(),
@@ -1486,3 +1576,71 @@ class GameTransportDialog(QDialog):
                 "from_address": self.e_from.text().strip(),
             },
         }
+
+
+
+class GameStatsDialog(QDialog):
+    """Dialog showing comprehensive game statistics."""
+
+    def __init__(self, config: AppConfig, game: Game, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.game = game
+        self.setWindowTitle(t("stats_title", name=game.name))
+        self.setMinimumSize(500, 450)
+        self.resize(560, 500)
+        self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+
+        stats = calculate_game_stats(self.game)
+
+        # Game overview
+        overview_group = QGroupBox(t("stats_title", name=self.game.name))
+        overview_form = QFormLayout(overview_group)
+
+        overview_form.addRow(t("stats_game_started"), QLabel(stats.game_started_formatted))
+        overview_form.addRow(t("stats_last_activity"), QLabel(stats.last_activity_formatted))
+        overview_form.addRow(t("stats_current_round"), QLabel(str(stats.current_round)))
+        overview_form.addRow(t("stats_total_turns"), QLabel(str(stats.total_turns)))
+        overview_form.addRow(t("stats_total_time"), QLabel(stats.total_time_formatted))
+        overview_form.addRow(t("stats_avg_turn_time"), QLabel(stats.avg_turn_time_formatted))
+        overview_form.addRow(t("stats_fastest_turn"), QLabel(stats.fastest_turn_formatted))
+        overview_form.addRow(t("stats_slowest_turn"), QLabel(stats.slowest_turn_formatted))
+
+        layout.addWidget(overview_group)
+
+        # Per-player stats table
+        player_group = QGroupBox(t("stats_per_player"))
+        player_layout = QVBoxLayout(player_group)
+
+        from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView
+
+        table = QTableWidget()
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels([
+            t("stats_player_name"),
+            t("stats_player_turns"),
+            t("stats_player_avg_time"),
+            t("stats_player_total_time"),
+        ])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setRowCount(len(stats.player_stats))
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+
+        for row, ps in enumerate(stats.player_stats):
+            table.setItem(row, 0, QTableWidgetItem(ps.name))
+            table.setItem(row, 1, QTableWidgetItem(str(ps.total_turns)))
+            table.setItem(row, 2, QTableWidgetItem(ps.avg_turn_time_formatted))
+            table.setItem(row, 3, QTableWidgetItem(ps.total_time_formatted))
+
+        player_layout.addWidget(table)
+        layout.addWidget(player_group)
+
+        # Close button
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)

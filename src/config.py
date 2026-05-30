@@ -66,6 +66,9 @@ class AppConfig:
             "check_interval_minutes": DEFAULT_CHECK_INTERVAL_MINUTES,
             "dark_mode": True,
             "auto_send": False,  # True = send save without popup (balloon only, for fullscreen play)
+            "language": "pl",  # "pl" or "en"
+            "auto_launch": False,  # Auto-launch Civ4 after downloading a save
+            "civ4_path": "",  # Path to Civ4BeyondSword.exe
             "transport": {
                 "type": "ftp",  # ftp, sftp, webdav
                 "host": "",
@@ -126,3 +129,30 @@ class AppConfig:
     @property
     def player_email(self) -> str:
         return self._data.get("player_email", "")
+
+    @property
+    def language(self) -> str:
+        return self._data.get("language", "pl")
+
+    @language.setter
+    def language(self, value: str):
+        self._data["language"] = value
+        self.save()
+
+    @property
+    def auto_launch(self) -> bool:
+        return self._data.get("auto_launch", False)
+
+    @auto_launch.setter
+    def auto_launch(self, value: bool):
+        self._data["auto_launch"] = value
+        self.save()
+
+    @property
+    def civ4_path(self) -> str:
+        return self._data.get("civ4_path", "")
+
+    @civ4_path.setter
+    def civ4_path(self, value: str):
+        self._data["civ4_path"] = value
+        self.save()

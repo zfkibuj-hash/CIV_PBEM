@@ -17,6 +17,7 @@ from src.transport.sftp_transport import SFTPTransport
 from src.transport.webdav_transport import WebDAVTransport
 from src.transport.email_transport import EmailTransport
 from src.notifier.email_notifier import EmailNotifier
+from src.launcher import launch_civ4
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class AppController(QObject):
 
     status_changed = pyqtSignal(str)
     games_updated = pyqtSignal()
+    save_downloaded = pyqtSignal(str)  # Emits filepath of downloaded save (for auto-launch)
 
     def __init__(self, config: AppConfig):
         super().__init__()
@@ -178,6 +180,7 @@ class AppController(QObject):
 
         success = transport.download(latest, local_path, game.name)
         if success:
+            self.save_downloaded.emit(str(local_path))
             return True, f"Pobrano: {latest}"
         else:
             return False, "Blad pobierania"
@@ -218,6 +221,7 @@ class AppController(QObject):
 
         success = transport.download(filename, local_path, game.name)
         if success:
+            self.save_downloaded.emit(str(local_path))
             return True, f"Pobrano: {filename}"
         else:
             return False, f"Blad pobierania: {filename}"
@@ -396,3 +400,26 @@ class AppController(QObject):
         if not self._notifier:
             return False, "SMTP nie jest skonfigurowany"
         return self._notifier.test_connection()
+
+    def try_auto_launch_civ4(self, save_filepath: str = ""):
+        """Auto-launch Civ4 if enabled in config.
+
+        Called after a save is downloaded. Launches Civ4 BTS if:
+        - auto_launch is enabled in settings
+        - civ4_path is configured
+        - Civ4 is not already running
+        """
+        if not self.config.auto_launch:
+            return
+
+        civ4_path = self.config.civ4_path
+        if not civ4_path:
+            logger.info("Auto-launch enabled but civ4_path not set")
+            return
+
+        success, msg = launch_civ4(civ4_path, save_file=save_filepath)
+        if success:
+            self.status_changed.emit(f"Civ4 uruchomiony")
+            logger.info(f"Auto-launched Civ4: {msg}")
+        else:
+            logger.warning(f"Auto-launch failed: {msg}")

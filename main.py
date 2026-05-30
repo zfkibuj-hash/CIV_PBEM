@@ -25,6 +25,7 @@ from src.gui.main_window import MainWindow
 from src.gui.app_controller import AppController
 from src.gui.tray_icon import TrayIcon
 from src.gui.file_watcher import SaveFileWatcher
+from src.i18n import set_language, get_i18n
 
 
 def get_resource_path(relative_path: str) -> Path:
@@ -96,6 +97,9 @@ def main():
             pass
 
     config = AppConfig()
+    # Initialize i18n from saved language preference
+    set_language(config.language)
+
     controller = AppController(config)
     window = MainWindow(config)
     window.setWindowIcon(app_icon)
@@ -171,6 +175,9 @@ def main():
     # --- Connect controller to window ---
     controller.status_changed.connect(window.status_label.setText)
     controller.games_updated.connect(window._load_games)
+
+    # Auto-launch Civ4 when a save is downloaded
+    controller.save_downloaded.connect(controller.try_auto_launch_civ4)
 
     # Reload controller when settings are saved (transport/notifier may have changed)
     window.settings_saved.connect(controller.reload_config)
