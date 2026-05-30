@@ -536,6 +536,18 @@ class MainWindow(QMainWindow):
         players_text += " -> ".join(parts)
         self.players_label.setText(players_text)
 
+        # Time since last turn
+        if game.history:
+            import datetime, time
+            last_turn = game.history[-1]
+            elapsed = time.time() - last_turn.timestamp
+            elapsed_str = self._format_elapsed(elapsed)
+            cp_name = game.current_player.name if game.current_player else "?"
+            self.players_label.setText(
+                f"{players_text}\n"
+                f"{cp_name} gra juz: {elapsed_str}"
+            )
+
         # History
         self.history_list.clear()
         for turn in reversed(game.history[-20:]):
@@ -547,6 +559,22 @@ class MainWindow(QMainWindow):
             idx = game.history.index(turn)
             item.setData(Qt.UserRole, idx)
             self.history_list.addItem(item)
+
+    @staticmethod
+    def _format_elapsed(seconds: float) -> str:
+        """Format elapsed seconds into a human-readable Polish string."""
+        minutes = int(seconds // 60)
+        hours = int(seconds // 3600)
+        days = int(seconds // 86400)
+
+        if days > 0:
+            return f"{days} dni, {hours % 24} godz."
+        elif hours > 0:
+            return f"{hours} godz., {minutes % 60} min."
+        elif minutes > 0:
+            return f"{minutes} min."
+        else:
+            return "< 1 min."
 
     def _on_new_game(self):
         """Create a new game dialog."""
@@ -776,18 +804,25 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(2000, lambda: self.status_label.setText("Gotowy"))
 
     def closeEvent(self, event):
-        """Minimize to tray instead of closing, if tray is available."""
-        if self._minimize_to_tray:
-            event.ignore()
-            self.hide()
-            # Show tray balloon so user knows the app is still running
-            if self._tray_icon and self._tray_icon.is_available:
-                self._tray_icon.notify_status(
-                    "Civ4 PBEM Manager",
-                    "Aplikacja dziala w tle. Kliknij dwukrotnie aby otworzyc."
-                )
-        else:
-            event.accept()
+        """Close button (X) always quits the application."""
+        event.accept()
+
+    def changeEvent(self, event):
+        """Minimize button (—) sends to tray instead of taskbar."""
+        from PyQt5.QtCore import QEvent
+        if event.type() == QEvent.WindowStateChange:
+            if self.windowState() & Qt.WindowMinimized:
+                if self._minimize_to_tray:
+                    event.ignore()
+                    self.hide()
+                    self.setWindowState(Qt.WindowNoState)
+                    if self._tray_icon and self._tray_icon.is_available:
+                        self._tray_icon.notify_status(
+                            "Civ4 PBEM Manager",
+                            "Zminimalizowano do tray. Kliknij dwukrotnie aby otworzyc."
+                        )
+                    return
+        super().changeEvent(event)
 
 
 class NewGameDialog(QDialog):
@@ -808,6 +843,11 @@ class NewGameDialog(QDialog):
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("np. WojnaSwiatowa")
         form.addRow("Nazwa gry:", self.name_edit)
+
+        self.admin_password_edit = QLineEdit()
+        self.admin_password_edit.setPlaceholderText("haslo do usuwania save'ow (opcjonalne)")
+        self.admin_password_edit.setEchoMode(QLineEdit.Password)
+        form.addRow("Haslo admina:", self.admin_password_edit)
 
         layout.addLayout(form)
 
@@ -882,7 +922,11 @@ class NewGameDialog(QDialog):
             Player(name=p["name"], email=p["email"], order=i)
             for i, p in enumerate(self._players_data)
         ]
-        return Game(name=name, players=players)
+        return Game(
+            name=name,
+            players=players,
+            admin_password=self.admin_password_edit.text().strip(),
+        )
 
 
 class SettingsDialog(QDialog):
@@ -955,6 +999,15 @@ class SettingsDialog(QDialog):
         self.dark_mode_check = QCheckBox("Tryb ciemny")
         self.dark_mode_check.setChecked(self.config.get("dark_mode", True))
         appearance_form.addRow(self.dark_mode_check)
+
+        self.auto_send_check = QCheckBox("Auto-wyslij save (bez pytania, dla fullscreen)")
+        self.auto_send_check.setChecked(self.config.get("auto_send", False))
+        self.auto_send_check.setToolTip(
+            "Gdy wlaczone: wykryty nowy save zostanie wyslany automatycznie\n"
+            "(tylko powiadomienie balloon, bez popup ktory minimalizuje gre)"
+        )
+        appearance_form.addRow(self.auto_send_check)
+
         layout.addWidget(appearance_group)
 
         layout.addStretch()
@@ -1067,6 +1120,12 @@ class SettingsDialog(QDialog):
         self.et_from_address.setPlaceholderText("adres nadawcy (opcjonalnie)")
         email_form.addRow("Od:", self.et_from_address)
 
+        et_warning = QLabel(
+            "⚠ Nie uzywaj prywatnego maila! Zalecane: osobna skrzynka."
+        )
+        et_warning.setStyleSheet("color: #ff9800; font-size: 9pt;")
+        email_form.addRow(et_warning)
+
         layout.addWidget(self.email_transport_group)
 
         # Show/hide based on current type
@@ -1140,6 +1199,7 @@ class SettingsDialog(QDialog):
         self.config.save_path = self.path_edit.text().strip()
         self.config.set("check_interval_minutes", self.check_interval.value())
         self.config.set("dark_mode", self.dark_mode_check.isChecked())
+        self.config.set("auto_send", self.auto_send_check.isChecked())
 
         transport_data = {
             "type": self.transport_type.currentText(),
@@ -1304,6 +1364,16 @@ class GameTransportDialog(QDialog):
         email_form.addRow("IMAP haslo:", self.e_imap_pass)
         self.e_from = QLineEdit(ec.get("from_address", ""))
         email_form.addRow("Od:", self.e_from)
+
+        email_warning = QLabel(
+            "⚠ UWAGA: Nie uzywaj prywatnego maila do transportu!\n"
+            "Zalecane: osobna skrzynka na potrzeby gry (np. civ4pbem@...).\n"
+            "Program kasuje/modyfikuje maile w skrzynce."
+        )
+        email_warning.setWordWrap(True)
+        email_warning.setStyleSheet("color: #ff9800; font-size: 9pt; padding: 4px;")
+        email_form.addRow(email_warning)
+
         form_layout.addWidget(self.email_group)
 
         form_layout.addStretch()
@@ -1313,11 +1383,39 @@ class GameTransportDialog(QDialog):
         # Show/hide panels
         self._on_type_changed(self.transport_type.currentText())
 
+        # Test connection button
+        btn_test = QPushButton("Testuj polaczenie")
+        btn_test.clicked.connect(self._test_connection)
+        layout.addWidget(btn_test)
+
         # Buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _test_connection(self):
+        """Test the transport connection with current form values."""
+        from src.gui.app_controller import AppController
+        from src.models.game import Game
+
+        # Build a temporary game with current form config
+        tc = self.get_transport_config()
+        temp_game = Game(name="__test__", transport_config=tc)
+
+        # Use a temporary controller to test
+        transport = AppController._create_transport_for_game(None, temp_game)
+        if not transport:
+            QMessageBox.warning(self, "Test", "Transport nie jest skonfigurowany.")
+            return
+
+        QApplication.processEvents()
+        success = transport.connect()
+        if success:
+            transport.disconnect()
+            QMessageBox.information(self, "Test", "Polaczenie OK!")
+        else:
+            QMessageBox.warning(self, "Test", "Nie mozna polaczyc. Sprawdz dane.")
 
     def _on_type_changed(self, t: str):
         self.file_group.setVisible(t in ("ftp", "sftp", "webdav"))

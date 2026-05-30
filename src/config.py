@@ -65,6 +65,7 @@ class AppConfig:
             "save_path": DEFAULT_SAVE_PATH,
             "check_interval_minutes": DEFAULT_CHECK_INTERVAL_MINUTES,
             "dark_mode": True,
+            "auto_send": False,  # True = send save without popup (balloon only, for fullscreen play)
             "transport": {
                 "type": "ftp",  # ftp, sftp, webdav
                 "host": "",

@@ -48,7 +48,8 @@ class Game:
     current_player_index: int = 0
     history: list[Turn] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
-    transport_config: dict = field(default_factory=dict)  # Per-game transport settings
+    transport_config: dict = field(default_factory=dict)
+    admin_password: str = ""  # Password required to delete save files
 
     @property
     def current_player(self) -> Optional[Player]:
@@ -121,6 +122,7 @@ class Game:
             "history": [t.to_dict() for t in self.history],
             "created_at": self.created_at,
             "transport_config": self.transport_config,
+            "admin_password": self.admin_password,
         }
 
     @classmethod
@@ -135,6 +137,7 @@ class Game:
             history=history,
             created_at=data.get("created_at", time.time()),
             transport_config=data.get("transport_config", {}),
+            admin_password=data.get("admin_password", ""),
         )
 
     def save_to_file(self, directory: Path):

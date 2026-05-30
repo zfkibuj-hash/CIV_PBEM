@@ -17,7 +17,7 @@ import os
 import logging
 from pathlib import Path
 
-from PyQt5.QtWidgets import QApplication, QMessageBox, QFileDialog
+from PyQt5.QtWidgets import QApplication, QMessageBox, QFileDialog, QLineEdit
 from PyQt5.QtGui import QIcon
 
 from src.config import AppConfig
@@ -53,6 +53,20 @@ def setup_logging():
     )
 
 
+def _play_notification_sound():
+    """Play a system notification sound when a save is downloaded."""
+    try:
+        import sys
+        if sys.platform == "win32":
+            import winsound
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+        else:
+            # On Linux/Mac, try system bell
+            print("\a", end="", flush=True)
+    except Exception:
+        pass  # Sound is non-critical
+
+
 def main():
     setup_logging()
     logger = logging.getLogger(__name__)
@@ -61,7 +75,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Civ4 PBEM Manager")
     app.setApplicationVersion("1.0.0")
-    app.setQuitOnLastWindowClosed(False)  # Keep running in tray
+    app.setQuitOnLastWindowClosed(True)  # X button quits; minimize goes to tray
 
     # Set application icon (taskbar + window title)
     icon_path = get_resource_path("icon.ico")
@@ -118,27 +132,37 @@ def main():
 
         # If we have a current game and it's our turn, offer to upload
         if window.current_game and window.current_game.is_my_turn(config.player_name):
-            # Show window if hidden
-            if not window.isVisible():
-                window.show()
-                window.activateWindow()
+            auto_send = config.get("auto_send", False)
 
-            reply = QMessageBox.question(
-                window,
-                "Nowy save wykryty!",
-                f"Wykryto nowy plik save:\n{filename}\n\n"
-                f"Czy chcesz go wyslac do gry '{window.current_game.name}'?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
-            if reply == QMessageBox.Yes:
+            if auto_send:
+                # Auto-send mode: upload without popup (for fullscreen play)
                 success, msg = controller.upload_save(
                     window.current_game, Path(filepath)
                 )
                 window.status_label.setText(msg)
-                if success:
-                    window._load_games()
-                    if tray.is_available:
+                if success and tray.is_available:
+                    tray.notify_status("Auto-wyslano!", msg)
+                    _play_notification_sound()
+            else:
+                # Manual mode: show popup dialog
+                if not window.isVisible():
+                    window.show()
+                    window.activateWindow()
+
+                reply = QMessageBox.question(
+                    window,
+                    "Nowy save wykryty!",
+                    f"Wykryto nowy plik save:\n{filename}\n\n"
+                    f"Czy chcesz go wyslac do gry '{window.current_game.name}'?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes,
+                )
+                if reply == QMessageBox.Yes:
+                    success, msg = controller.upload_save(
+                        window.current_game, Path(filepath)
+                    )
+                    window.status_label.setText(msg)
+                    if success and tray.is_available:
                         tray.notify_status("Wyslano!", msg)
 
     watcher.new_save_detected.connect(on_new_save_detected)
@@ -244,6 +268,8 @@ def main():
         if downloaded:
             dl_msg = " | ".join(downloaded)
             window.status_label.setText(f"Pobrano: {dl_msg}")
+            # Play notification sound
+            _play_notification_sound()
             if tray.is_available:
                 for game in window.games:
                     if game.is_my_turn(my_name):
@@ -330,12 +356,54 @@ def main():
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
-        if reply == QMessageBox.Yes:
-            success, msg = controller.delete_game(game)
-            window.status_label.setText(msg)
-            if success:
-                window.current_game = None
-                window._load_games()
+        if reply != QMessageBox.Yes:
+            return
+
+        # Ask about deleting save files
+        delete_saves = False
+        reply2 = QMessageBox.question(
+            window,
+            "Usuwanie save'ow",
+            f"Czy chcesz rowniez usunac pliki save skojarzone z gra '{game.name}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply2 == QMessageBox.Yes:
+            # Require admin password to delete saves
+            from PyQt5.QtWidgets import QInputDialog
+            if game.admin_password:
+                pwd, ok = QInputDialog.getText(
+                    window, "Haslo admina",
+                    "Podaj haslo admina gry aby usunac pliki save:",
+                    QLineEdit.Password,
+                )
+                if not ok or pwd != game.admin_password:
+                    QMessageBox.warning(window, "Blad", "Nieprawidlowe haslo. Save'y nie zostana usuniete.")
+                else:
+                    delete_saves = True
+            else:
+                # No admin password set — allow deletion
+                delete_saves = True
+
+        # Delete save files if confirmed
+        if delete_saves:
+            save_dir = Path(config.save_path)
+            if save_dir.exists():
+                import glob
+                pattern = str(save_dir / f"{game.name}_T*.*")
+                for f in glob.glob(pattern):
+                    try:
+                        Path(f).unlink()
+                    except Exception:
+                        pass
+                window.status_label.setText(f"Usunieto pliki save gry '{game.name}'")
+
+        # Delete game
+        success, msg = controller.delete_game(game)
+        window.status_label.setText(msg)
+        if success:
+            window.current_game = None
+            window._load_games()
 
     window.btn_delete_game.clicked.connect(handle_delete_game)
 
