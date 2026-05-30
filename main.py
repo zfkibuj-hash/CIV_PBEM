@@ -58,7 +58,8 @@ def main():
     tray = TrayIcon(window)
     if tray.is_available:
         tray.show()
-        window._minimize_to_tray = True  # Enable minimize-to-tray on close
+        window._minimize_to_tray = True
+        window._tray_icon = tray
 
         tray.show_window_requested.connect(window.show)
         tray.show_window_requested.connect(window.activateWindow)
@@ -66,6 +67,7 @@ def main():
         tray.check_now_requested.connect(lambda: handle_check(from_tray=True))
     else:
         window._minimize_to_tray = False
+        window._tray_icon = None
 
     # --- File Watcher (watchdog) ---
     watcher = SaveFileWatcher(config.save_path, parent=window)

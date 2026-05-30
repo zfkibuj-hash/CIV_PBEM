@@ -139,6 +139,8 @@ class MainWindow(QMainWindow):
         self.config = config
         self.games: list[Game] = []
         self.current_game: Optional[Game] = None
+        self._minimize_to_tray = False  # Set to True by main.py when tray is available
+        self._tray_icon = None  # Reference to TrayIcon, set by main.py
 
         self.setWindowTitle("Civ4 PBEM Manager v1.0")
         self.setMinimumSize(800, 600)
@@ -423,10 +425,15 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Minimize to tray instead of closing, if tray is available."""
-        if hasattr(self, '_minimize_to_tray') and self._minimize_to_tray:
+        if self._minimize_to_tray:
             event.ignore()
             self.hide()
-            self.status_label.setText("Zminimalizowano do tray")
+            # Show tray balloon so user knows the app is still running
+            if self._tray_icon and self._tray_icon.is_available:
+                self._tray_icon.notify_status(
+                    "Civ4 PBEM Manager",
+                    "Aplikacja dziala w tle. Kliknij dwukrotnie aby otworzyc."
+                )
         else:
             event.accept()
 
