@@ -39,16 +39,18 @@ class SynologySharingTransport(BaseTransport):
     """
 
     def __init__(self, upload_url: str = "", download_url: str = "",
-                 upload_password: str = "", download_password: str = ""):
+                 upload_password: str = "", download_password: str = "",
+                 ignore_ssl: bool = True):
         self.upload_url = upload_url.rstrip("/")
         self.download_url = download_url.rstrip("/")
         self.upload_password = upload_password
         self.download_password = download_password
         self._connected = False
-        # Synology self-signed certs — create permissive SSL context
+        # SSL context — permissive when ignore_ssl is True
         self._ssl_ctx = ssl.create_default_context()
-        self._ssl_ctx.check_hostname = False
-        self._ssl_ctx.verify_mode = ssl.CERT_NONE
+        if ignore_ssl:
+            self._ssl_ctx.check_hostname = False
+            self._ssl_ctx.verify_mode = ssl.CERT_NONE
 
     @property
     def is_connected(self) -> bool:

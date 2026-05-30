@@ -807,6 +807,11 @@ class SettingsDialog(QDialog):
         self.transport_type.setCurrentText(tc.get("type", "ftp"))
         self.transport_type.currentTextChanged.connect(self._on_transport_type_changed)
         type_form.addRow("Typ:", self.transport_type)
+
+        self.ssl_ignore_check = QCheckBox("Ignoruj bledy SSL (self-signed certs)")
+        self.ssl_ignore_check.setChecked(tc.get("ignore_ssl_errors", True))
+        type_form.addRow(self.ssl_ignore_check)
+
         layout.addWidget(type_group)
 
         # File-based transport settings (FTP/SFTP/WebDAV)
@@ -984,6 +989,7 @@ class SettingsDialog(QDialog):
 
         transport_data = {
             "type": self.transport_type.currentText(),
+            "ignore_ssl_errors": self.ssl_ignore_check.isChecked(),
             "host": self.transport_host.text().strip(),
             "port": self.transport_port.value(),
             "username": self.transport_user.text().strip(),

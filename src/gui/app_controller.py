@@ -44,6 +44,7 @@ class AppController(QObject):
         username = tc.get("username", "")
         password = tc.get("password", "")
         remote_dir = tc.get("remote_dir", "/civ4pbem")
+        ignore_ssl = tc.get("ignore_ssl_errors", True)
 
         if transport_type == "email":
             # Email transport uses SMTP/IMAP config
@@ -80,6 +81,7 @@ class AppController(QObject):
                 download_url=sc.get("download_url", ""),
                 upload_password=sc.get("upload_password", ""),
                 download_password=sc.get("download_password", ""),
+                ignore_ssl=ignore_ssl,
             )
             return
 
@@ -100,7 +102,8 @@ class AppController(QObject):
         elif transport_type == "webdav":
             self._transport = WebDAVTransport(
                 host=host, port=port, username=username,
-                password=password, remote_dir=remote_dir
+                password=password, remote_dir=remote_dir,
+                ignore_ssl=ignore_ssl,
             )
 
     def _init_notifier(self):
