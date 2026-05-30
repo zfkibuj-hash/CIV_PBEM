@@ -352,6 +352,14 @@ class MainWindow(QMainWindow):
         btn_new_game.clicked.connect(self._on_new_game)
         sidebar_layout.addWidget(btn_new_game)
 
+        self.btn_import_game = QPushButton("Importuj gre...")
+        self.btn_import_game.clicked.connect(self._on_import_game)
+        sidebar_layout.addWidget(self.btn_import_game)
+
+        self.btn_export_game = QPushButton("Eksportuj gre...")
+        self.btn_export_game.clicked.connect(self._on_export_game)
+        sidebar_layout.addWidget(self.btn_export_game)
+
         self.btn_delete_game = QPushButton("Usun gre")
         self.btn_delete_game.setStyleSheet("color: #ef5350;")
         self.btn_delete_game.clicked.connect(self._on_delete_game)
@@ -547,6 +555,84 @@ class MainWindow(QMainWindow):
                 game.save_to_file(get_games_dir())
                 self.games.append(game)
                 self._refresh_game_list()
+
+    def _on_export_game(self):
+        """Export current game config to a .civ4pbem file for sharing with other players."""
+        if not self.current_game:
+            QMessageBox.information(self, "Info", "Zaznacz gre do eksportu.")
+            return
+
+        game = self.current_game
+        export_data = {
+            "civ4pbem_version": "1.0",
+            "name": game.name,
+            "players": [p.to_dict() for p in game.players],
+            "transport_config": game.transport_config,
+        }
+
+        import json
+        default_name = f"{game.name}.civ4pbem"
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Eksportuj konfiguracje gry", default_name,
+            "Civ4 PBEM Game Config (*.civ4pbem);;All Files (*)"
+        )
+        if filepath:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(export_data, f, indent=2, ensure_ascii=False)
+            self.status_label.setText(f"Wyeksportowano: {filepath}")
+
+    def _on_import_game(self):
+        """Import a game from a .civ4pbem file shared by another player."""
+        import json
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Importuj konfiguracje gry", "",
+            "Civ4 PBEM Game Config (*.civ4pbem);;All Files (*)"
+        )
+        if not filepath:
+            return
+
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            name = data.get("name", "")
+            if not name:
+                QMessageBox.warning(self, "Blad", "Plik nie zawiera nazwy gry.")
+                return
+
+            # Check for duplicate
+            for g in self.games:
+                if g.name == name:
+                    reply = QMessageBox.question(
+                        self, "Gra juz istnieje",
+                        f"Gra '{name}' juz istnieje. Nadpisac?",
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+                    )
+                    if reply != QMessageBox.Yes:
+                        return
+                    # Remove old one
+                    from src.config import get_games_dir
+                    g.delete_file(get_games_dir())
+                    self.games.remove(g)
+                    break
+
+            players = [Player.from_dict(p) for p in data.get("players", [])]
+            transport_config = data.get("transport_config", {})
+
+            game = Game(
+                name=name,
+                players=players,
+                transport_config=transport_config,
+            )
+
+            from src.config import get_games_dir
+            game.save_to_file(get_games_dir())
+            self.games.append(game)
+            self._refresh_game_list()
+            self.status_label.setText(f"Zaimportowano gre: {name}")
+
+        except Exception as e:
+            QMessageBox.warning(self, "Blad importu", f"Nie udalo sie zaimportowac:\n{e}")
 
     def _on_delete_game(self):
         """Delete the currently selected game."""

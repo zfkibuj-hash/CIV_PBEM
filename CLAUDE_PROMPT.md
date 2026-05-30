@@ -88,8 +88,19 @@ CIV_PBEM/
 
 #### 4. Delete Game
 - "Usun gre" button in sidebar (styled red)
-- Confirmation dialog: "Czy na pewno chcesz usunac gre '{name}'? Ta operacja jest nieodwracalna!"
+- Confirmation dialog
 - `AppController.delete_game(game)`: removes JSON file + remote state cache
+
+#### 5. Game Config Export/Import (.civ4pbem files)
+- **Export**: "Eksportuj gre..." button in sidebar → saves `.civ4pbem` file (JSON) containing:
+  - `civ4pbem_version`: "1.0"
+  - `name`: game name
+  - `players`: list of players with name, email, order
+  - `transport_config`: full transport settings for this game
+- **Import**: "Importuj gre..." button in sidebar → opens `.civ4pbem` file, creates game locally
+  - Checks for duplicate game name (offers to overwrite)
+  - Player who sets up the game exports the file and sends it (email, Discord, etc.) to all players
+  - Each player imports and has identical game config + transport ready to go
 
 #### 5. Upload Confirmation (Turn Order Advisory)
 - Upload does NOT block based on turn order — user decides when to send
