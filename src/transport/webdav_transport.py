@@ -21,7 +21,7 @@ class WebDAVTransport(BaseTransport):
 
     def __init__(self, host: str, port: int = 5006, username: str = "",
                  password: str = "", remote_dir: str = "/civ4pbem",
-                 use_https: bool = True):
+                 use_https: bool = True, ignore_ssl: bool = True):
         self.host = host
         self.port = port
         self.username = username
@@ -29,6 +29,14 @@ class WebDAVTransport(BaseTransport):
         self.remote_dir = remote_dir
         self.use_https = use_https
         self._connected = False
+        # SSL context for self-signed certs
+        import ssl
+        if ignore_ssl:
+            self._ssl_ctx = ssl.create_default_context()
+            self._ssl_ctx.check_hostname = False
+            self._ssl_ctx.verify_mode = ssl.CERT_NONE
+        else:
+            self._ssl_ctx = None
 
     @property
     def base_url(self) -> str:
@@ -51,7 +59,7 @@ class WebDAVTransport(BaseTransport):
         req.add_header("Authorization", self._auth_header())
 
         try:
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=30, context=self._ssl_ctx) as response:
                 return response.read()
         except urllib.error.HTTPError as e:
             if e.code == 404:
@@ -71,7 +79,7 @@ class WebDAVTransport(BaseTransport):
             req.add_header("Depth", "0")
 
             try:
-                urllib.request.urlopen(req, timeout=30)
+                urllib.request.urlopen(req, timeout=30, context=self._ssl_ctx)
             except urllib.error.HTTPError as e:
                 if e.code == 404:
                     # Try to create the directory
@@ -107,7 +115,7 @@ class WebDAVTransport(BaseTransport):
             url = f"{self.base_url}{remote_path}"
             req = urllib.request.Request(url, data=data, method="PUT")
             req.add_header("Authorization", self._auth_header())
-            urllib.request.urlopen(req, timeout=60)
+            urllib.request.urlopen(req, timeout=60, context=self._ssl_ctx)
 
             logger.info(f"Uploaded {remote_filename} to WebDAV {game_dir}")
             return True
@@ -146,7 +154,7 @@ class WebDAVTransport(BaseTransport):
             req.add_header("Depth", "1")
 
             try:
-                with urllib.request.urlopen(req, timeout=30) as response:
+                with urllib.request.urlopen(req, timeout=30, context=self._ssl_ctx) as response:
                     body = response.read()
             except urllib.error.HTTPError as e:
                 if e.code == 207:
@@ -183,7 +191,7 @@ class WebDAVTransport(BaseTransport):
                 url = f"{self.base_url}{current}/"
                 req = urllib.request.Request(url, method="MKCOL")
                 req.add_header("Authorization", self._auth_header())
-                urllib.request.urlopen(req, timeout=15)
+                urllib.request.urlopen(req, timeout=15, context=self._ssl_ctx)
             except urllib.error.HTTPError:
                 pass  # Already exists or other error
             except Exception:

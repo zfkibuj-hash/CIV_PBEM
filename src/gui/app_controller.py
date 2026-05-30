@@ -15,6 +15,7 @@ from src.transport.ftp_transport import FTPTransport
 from src.transport.sftp_transport import SFTPTransport
 from src.transport.webdav_transport import WebDAVTransport
 from src.transport.email_transport import EmailTransport
+from src.transport.synology_sharing_transport import SynologySharingTransport
 from src.notifier.email_notifier import EmailNotifier
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ class AppController(QObject):
         username = tc.get("username", "")
         password = tc.get("password", "")
         remote_dir = tc.get("remote_dir", "/civ4pbem")
+        ignore_ssl = tc.get("ignore_ssl_errors", True)
 
         if transport_type == "email":
             # Email transport uses SMTP/IMAP config
@@ -68,6 +70,21 @@ class AppController(QObject):
             )
             return
 
+        if transport_type == "synology":
+            sc = tc.get("synology", {})
+            upload_url = sc.get("upload_url", "")
+            if not upload_url:
+                self._transport = None
+                return
+            self._transport = SynologySharingTransport(
+                upload_url=upload_url,
+                download_url=sc.get("download_url", ""),
+                upload_password=sc.get("upload_password", ""),
+                download_password=sc.get("download_password", ""),
+                ignore_ssl=ignore_ssl,
+            )
+            return
+
         if not host:
             self._transport = None
             return
@@ -75,7 +92,8 @@ class AppController(QObject):
         if transport_type == "ftp":
             self._transport = FTPTransport(
                 host=host, port=port, username=username,
-                password=password, remote_dir=remote_dir
+                password=password, remote_dir=remote_dir,
+                ignore_ssl=ignore_ssl,
             )
         elif transport_type == "sftp":
             self._transport = SFTPTransport(
@@ -85,7 +103,8 @@ class AppController(QObject):
         elif transport_type == "webdav":
             self._transport = WebDAVTransport(
                 host=host, port=port, username=username,
-                password=password, remote_dir=remote_dir
+                password=password, remote_dir=remote_dir,
+                ignore_ssl=ignore_ssl,
             )
 
     def _init_notifier(self):

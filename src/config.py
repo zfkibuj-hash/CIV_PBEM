@@ -64,6 +64,7 @@ class AppConfig:
         return {
             "save_path": DEFAULT_SAVE_PATH,
             "check_interval_minutes": DEFAULT_CHECK_INTERVAL_MINUTES,
+            "dark_mode": True,
             "transport": {
                 "type": "ftp",  # ftp, sftp, webdav
                 "host": "",

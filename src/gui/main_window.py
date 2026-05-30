@@ -1,5 +1,5 @@
 """
-Main application window - PyQt5 modern dark theme GUI.
+Main application window - PyQt5 GUI with dark/light theme support.
 """
 import logging
 from pathlib import Path
@@ -10,7 +10,8 @@ from PyQt5.QtWidgets import (
     QPushButton, QListWidget, QListWidgetItem, QGroupBox,
     QLineEdit, QSpinBox, QComboBox, QFileDialog, QMessageBox,
     QSystemTrayIcon, QMenu, QAction, QApplication, QFormLayout,
-    QDialog, QDialogButtonBox, QTextEdit, QSplitter, QFrame
+    QDialog, QDialogButtonBox, QTextEdit, QSplitter, QFrame,
+    QCheckBox
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QIcon, QFont, QColor
@@ -27,6 +28,9 @@ QMainWindow, QWidget {
     color: #e0e0e0;
     font-family: "Segoe UI", sans-serif;
     font-size: 10pt;
+}
+QWidget#sidebar {
+    background-color: #252536;
 }
 QGroupBox {
     border: 1px solid #555;
@@ -128,7 +132,174 @@ QTextEdit {
 QSplitter::handle {
     background-color: #555;
 }
+QTabWidget::pane {
+    border: 1px solid #555;
+    background-color: #1e1e1e;
+}
+QTabBar::tab {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    border: 1px solid #555;
+    border-bottom: none;
+    padding: 8px 20px;
+    margin-right: 2px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+QTabBar::tab:selected {
+    background-color: #1e1e1e;
+    color: #42a5f5;
+    border-bottom: 2px solid #42a5f5;
+}
+QTabBar::tab:hover:!selected {
+    background-color: #383838;
+}
 """
+
+
+LIGHT_STYLE = """
+QMainWindow, QWidget {
+    background-color: #f5f5f5;
+    color: #212121;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 10pt;
+}
+QWidget#sidebar {
+    background-color: #e0e0e0;
+}
+QGroupBox {
+    border: 1px solid #bdbdbd;
+    border-radius: 4px;
+    margin-top: 8px;
+    padding-top: 12px;
+    font-weight: bold;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px;
+}
+QPushButton {
+    background-color: #ffffff;
+    border: 1px solid #bdbdbd;
+    border-radius: 4px;
+    padding: 6px 16px;
+    min-height: 24px;
+    color: #212121;
+}
+QPushButton:hover {
+    background-color: #e3f2fd;
+    border-color: #1976d2;
+}
+QPushButton:pressed {
+    background-color: #bbdefb;
+}
+QPushButton#btn_download {
+    background-color: #4caf50;
+    border-color: #388e3c;
+    color: white;
+    font-weight: bold;
+}
+QPushButton#btn_download:hover {
+    background-color: #66bb6a;
+}
+QPushButton#btn_upload {
+    background-color: #1976d2;
+    border-color: #1565c0;
+    color: white;
+    font-weight: bold;
+}
+QPushButton#btn_upload:hover {
+    background-color: #42a5f5;
+}
+QListWidget {
+    background-color: #ffffff;
+    border: 1px solid #bdbdbd;
+    border-radius: 4px;
+    padding: 4px;
+}
+QListWidget::item {
+    padding: 8px;
+    border-radius: 3px;
+}
+QListWidget::item:selected {
+    background-color: #e8f5e9;
+    border-left: 3px solid #4caf50;
+}
+QListWidget::item:hover {
+    background-color: #f5f5f5;
+}
+QLineEdit, QSpinBox, QComboBox {
+    background-color: #ffffff;
+    border: 1px solid #bdbdbd;
+    border-radius: 3px;
+    padding: 4px 8px;
+    min-height: 20px;
+    color: #212121;
+}
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+    border-color: #1976d2;
+}
+QLabel#status_bar {
+    background-color: #e0e0e0;
+    padding: 4px 12px;
+    font-size: 9pt;
+    color: #616161;
+}
+QLabel#banner_your_turn {
+    background-color: #4caf50;
+    color: white;
+    padding: 8px 16px;
+    font-weight: bold;
+    font-size: 11pt;
+}
+QLabel#banner_waiting {
+    background-color: #eeeeee;
+    color: #616161;
+    padding: 8px 16px;
+    font-size: 10pt;
+}
+QTextEdit {
+    background-color: #ffffff;
+    border: 1px solid #bdbdbd;
+    border-radius: 4px;
+    color: #616161;
+    font-size: 9pt;
+}
+QSplitter::handle {
+    background-color: #bdbdbd;
+}
+QTabWidget::pane {
+    border: 1px solid #bdbdbd;
+    background-color: #f5f5f5;
+}
+QTabBar::tab {
+    background-color: #e0e0e0;
+    color: #212121;
+    border: 1px solid #bdbdbd;
+    border-bottom: none;
+    padding: 8px 20px;
+    margin-right: 2px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+QTabBar::tab:selected {
+    background-color: #f5f5f5;
+    color: #1976d2;
+    border-bottom: 2px solid #1976d2;
+}
+QTabBar::tab:hover:!selected {
+    background-color: #eeeeee;
+}
+QCheckBox {
+    color: #212121;
+}
+"""
+
+
+def get_style_for_theme(dark: bool) -> str:
+    """Return the appropriate stylesheet."""
+    return DARK_STYLE if dark else LIGHT_STYLE
 
 
 class MainWindow(QMainWindow):
@@ -144,11 +315,16 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Civ4 PBEM Manager v1.0")
         self.setMinimumSize(800, 600)
-        self.setStyleSheet(DARK_STYLE)
+        self.apply_theme()
 
         self._init_ui()
         self._load_games()
         self._setup_timer()
+
+    def apply_theme(self):
+        """Apply dark or light theme based on config."""
+        is_dark = self.config.get("dark_mode", True)
+        self.setStyleSheet(get_style_for_theme(is_dark))
 
     def _init_ui(self):
         central = QWidget()
@@ -160,7 +336,7 @@ class MainWindow(QMainWindow):
         # --- Left sidebar: game list ---
         sidebar = QWidget()
         sidebar.setFixedWidth(240)
-        sidebar.setStyleSheet("background-color: #252536;")
+        sidebar.setObjectName("sidebar")
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(8, 12, 8, 8)
 
@@ -534,18 +710,39 @@ class NewGameDialog(QDialog):
 
 
 class SettingsDialog(QDialog):
-    """Application settings dialog."""
+    """Application settings dialog with tabbed layout."""
 
     def __init__(self, config: AppConfig, parent=None):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("Ustawienia")
-        self.setMinimumWidth(500)
+        self.setMinimumSize(520, 480)
+        self.resize(540, 520)
         self.setStyleSheet(DARK_STYLE)
         self._init_ui()
 
     def _init_ui(self):
+        from PyQt5.QtWidgets import QTabWidget
         layout = QVBoxLayout(self)
+
+        tabs = QTabWidget()
+        tabs.addTab(self._create_general_tab(), "Ogolne")
+        tabs.addTab(self._create_transport_tab(), "Transport")
+        tabs.addTab(self._create_notifications_tab(), "Powiadomienia")
+        layout.addWidget(tabs)
+
+        # Buttons at the bottom (always visible)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Save | QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self._save_settings)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    # --- Tab 1: General ---
+    def _create_general_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
 
         # Player info
         player_group = QGroupBox("Gracz")
@@ -566,43 +763,98 @@ class SettingsDialog(QDialog):
         path_layout.addWidget(btn_browse)
         layout.addWidget(path_group)
 
-        # Transport
-        transport_group = QGroupBox("Transport plikow")
-        transport_form = QFormLayout(transport_group)
+        # Check interval
+        interval_group = QGroupBox("Sprawdzanie")
+        interval_form = QFormLayout(interval_group)
+        self.check_interval = QSpinBox()
+        self.check_interval.setRange(1, 60)
+        self.check_interval.setValue(self.config.check_interval_minutes)
+        self.check_interval.setSuffix(" min")
+        interval_form.addRow("Sprawdzaj co:", self.check_interval)
+        layout.addWidget(interval_group)
+
+        # Appearance
+        appearance_group = QGroupBox("Wyglad")
+        appearance_form = QFormLayout(appearance_group)
+        self.dark_mode_check = QCheckBox("Tryb ciemny")
+        self.dark_mode_check.setChecked(self.config.get("dark_mode", True))
+        appearance_form.addRow(self.dark_mode_check)
+        layout.addWidget(appearance_group)
+
+        layout.addStretch()
+        return tab
+
+    # --- Tab 2: Transport ---
+    def _create_transport_tab(self) -> QWidget:
+        from PyQt5.QtWidgets import QScrollArea
+
+        # Use a scroll area so email fields never overlap on small screens
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(8)
 
         tc = self.config.transport_config
+
+        # Transport type selector
+        type_group = QGroupBox("Metoda transportu")
+        type_form = QFormLayout(type_group)
         self.transport_type = QComboBox()
-        self.transport_type.addItems(["ftp", "sftp", "webdav", "email"])
+        self.transport_type.addItems(["ftp", "sftp", "webdav", "email", "synology"])
         self.transport_type.setCurrentText(tc.get("type", "ftp"))
         self.transport_type.currentTextChanged.connect(self._on_transport_type_changed)
-        transport_form.addRow("Typ:", self.transport_type)
+        type_form.addRow("Typ:", self.transport_type)
+
+        self.ssl_ignore_check = QCheckBox("Ignoruj bledy SSL (self-signed certs)")
+        self.ssl_ignore_check.setChecked(tc.get("ignore_ssl_errors", True))
+        type_form.addRow(self.ssl_ignore_check)
+
+        layout.addWidget(type_group)
+
+        # File-based transport settings (FTP/SFTP/WebDAV)
+        self.file_transport_group = QGroupBox("Serwer plikow (FTP/SFTP/WebDAV)")
+        file_form = QFormLayout(self.file_transport_group)
 
         self.transport_host = QLineEdit(tc.get("host", ""))
         self.transport_host.setPlaceholderText("np. ftp.mojserwer.pl")
-        transport_form.addRow("Host:", self.transport_host)
+        file_form.addRow("Host:", self.transport_host)
 
         self.transport_port = QSpinBox()
         self.transport_port.setRange(1, 65535)
         self.transport_port.setValue(tc.get("port", 21))
-        transport_form.addRow("Port:", self.transport_port)
+        file_form.addRow("Port:", self.transport_port)
 
         self.transport_user = QLineEdit(tc.get("username", ""))
-        transport_form.addRow("Login:", self.transport_user)
+        file_form.addRow("Login:", self.transport_user)
 
         self.transport_pass = QLineEdit(tc.get("password", ""))
         self.transport_pass.setEchoMode(QLineEdit.Password)
-        transport_form.addRow("Haslo:", self.transport_pass)
+        file_form.addRow("Haslo:", self.transport_pass)
 
         self.transport_dir = QLineEdit(tc.get("remote_dir", "/civ4pbem"))
-        transport_form.addRow("Folder zdalny:", self.transport_dir)
+        file_form.addRow("Folder zdalny:", self.transport_dir)
 
-        layout.addWidget(transport_group)
+        layout.addWidget(self.file_transport_group)
 
-        # Email transport settings (shown only when type=email)
+        # Email transport settings (SMTP + IMAP)
         self.email_transport_group = QGroupBox("Transport email (SMTP + IMAP)")
         email_form = QFormLayout(self.email_transport_group)
+        email_form.setSpacing(6)
 
         ec = tc.get("email", {})
+
+        self.et_mode = QComboBox()
+        self.et_mode.addItems(["shared", "individual"])
+        self.et_mode.setCurrentText(ec.get("mode", "shared"))
+        email_form.addRow("Tryb:", self.et_mode)
+
+        self.et_shared_email = QLineEdit(ec.get("shared_email", ""))
+        self.et_shared_email.setPlaceholderText("wspoldzielona skrzynka, np. civ4pbem@...")
+        email_form.addRow("Skrzynka wspolna:", self.et_shared_email)
+
         self.et_smtp_host = QLineEdit(ec.get("smtp_host", ""))
         self.et_smtp_host.setPlaceholderText("np. smtp.gmail.com")
         email_form.addRow("SMTP host:", self.et_smtp_host)
@@ -635,25 +887,47 @@ class SettingsDialog(QDialog):
         self.et_imap_pass.setEchoMode(QLineEdit.Password)
         email_form.addRow("IMAP haslo:", self.et_imap_pass)
 
-        self.et_mode = QComboBox()
-        self.et_mode.addItems(["shared", "individual"])
-        self.et_mode.setCurrentText(ec.get("mode", "shared"))
-        email_form.addRow("Tryb:", self.et_mode)
-
-        self.et_shared_email = QLineEdit(ec.get("shared_email", ""))
-        self.et_shared_email.setPlaceholderText("wspoldzielona skrzynka, np. civ4pbem@...")
-        email_form.addRow("Skrzynka:", self.et_shared_email)
-
         self.et_from_address = QLineEdit(ec.get("from_address", ""))
         self.et_from_address.setPlaceholderText("adres nadawcy (opcjonalnie)")
         email_form.addRow("Od:", self.et_from_address)
 
         layout.addWidget(self.email_transport_group)
 
-        # Show/hide email settings based on current type
+        # Synology Sharing Links settings
+        self.synology_transport_group = QGroupBox("Synology - linki udostepniania")
+        syno_form = QFormLayout(self.synology_transport_group)
+
+        snc = tc.get("synology", {})
+        self.syno_upload_url = QLineEdit(snc.get("upload_url", ""))
+        self.syno_upload_url.setPlaceholderText("https://twoj.synology.me:5001/sharing/XXXXXXX")
+        syno_form.addRow("URL uploadu:", self.syno_upload_url)
+
+        self.syno_upload_password = QLineEdit(snc.get("upload_password", ""))
+        self.syno_upload_password.setEchoMode(QLineEdit.Password)
+        syno_form.addRow("Haslo uploadu:", self.syno_upload_password)
+
+        self.syno_download_url = QLineEdit(snc.get("download_url", ""))
+        self.syno_download_url.setPlaceholderText("https://gofile.me/XXXXX/XXXXXXX")
+        syno_form.addRow("URL pobierania:", self.syno_download_url)
+
+        self.syno_download_password = QLineEdit(snc.get("download_password", ""))
+        self.syno_download_password.setEchoMode(QLineEdit.Password)
+        syno_form.addRow("Haslo pobierania:", self.syno_download_password)
+
+        layout.addWidget(self.synology_transport_group)
+
+        # Show/hide based on current type
         self._on_transport_type_changed(self.transport_type.currentText())
 
-        # SMTP
+        layout.addStretch()
+        scroll.setWidget(tab)
+        return scroll
+
+    # --- Tab 3: Notifications ---
+    def _create_notifications_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
         smtp_group = QGroupBox("Powiadomienia email (SMTP)")
         smtp_form = QFormLayout(smtp_group)
 
@@ -680,34 +954,24 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(smtp_group)
 
-        # Check interval
-        interval_group = QGroupBox("Sprawdzanie")
-        interval_form = QFormLayout(interval_group)
-        self.check_interval = QSpinBox()
-        self.check_interval.setRange(1, 60)
-        self.check_interval.setValue(self.config.check_interval_minutes)
-        self.check_interval.setSuffix(" min")
-        interval_form.addRow("Sprawdzaj co:", self.check_interval)
-        layout.addWidget(interval_group)
-
-        # Buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.Save | QDialogButtonBox.Cancel
+        info_label = QLabel(
+            "Powiadomienia email sa NIEZALEZNE od transportu.\n"
+            "Sluza do informowania nastepnego gracza ze czeka na niego tura.\n"
+            "Jesli uzywasz transportu email, mozesz tu podac te same dane."
         )
-        buttons.accepted.connect(self._save_settings)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #9e9e9e; font-size: 9pt; padding: 8px;")
+        layout.addWidget(info_label)
 
+        layout.addStretch()
+        return tab
+
+    # --- Logic ---
     def _on_transport_type_changed(self, transport_type: str):
-        """Show/hide email transport settings based on selected type."""
-        is_email = transport_type == "email"
-        self.email_transport_group.setVisible(is_email)
-        # Hide file-based transport fields when email is selected
-        self.transport_host.setEnabled(not is_email)
-        self.transport_port.setEnabled(not is_email)
-        self.transport_user.setEnabled(not is_email)
-        self.transport_pass.setEnabled(not is_email)
-        self.transport_dir.setEnabled(not is_email)
+        """Show/hide transport panels based on selected type."""
+        self.file_transport_group.setVisible(transport_type in ("ftp", "sftp", "webdav"))
+        self.email_transport_group.setVisible(transport_type == "email")
+        self.synology_transport_group.setVisible(transport_type == "synology")
 
     def _browse_path(self):
         path = QFileDialog.getExistingDirectory(
@@ -721,9 +985,11 @@ class SettingsDialog(QDialog):
         self.config.set("player_email", self.player_email_edit.text().strip())
         self.config.save_path = self.path_edit.text().strip()
         self.config.set("check_interval_minutes", self.check_interval.value())
+        self.config.set("dark_mode", self.dark_mode_check.isChecked())
 
         transport_data = {
             "type": self.transport_type.currentText(),
+            "ignore_ssl_errors": self.ssl_ignore_check.isChecked(),
             "host": self.transport_host.text().strip(),
             "port": self.transport_port.value(),
             "username": self.transport_user.text().strip(),
@@ -744,6 +1010,12 @@ class SettingsDialog(QDialog):
                 "shared_email": self.et_shared_email.text().strip(),
                 "from_address": self.et_from_address.text().strip(),
             },
+            "synology": {
+                "upload_url": self.syno_upload_url.text().strip(),
+                "upload_password": self.syno_upload_password.text(),
+                "download_url": self.syno_download_url.text().strip(),
+                "download_password": self.syno_download_password.text(),
+            },
         }
         self.config.set("transport", transport_data)
 
@@ -755,4 +1027,10 @@ class SettingsDialog(QDialog):
             "use_tls": True,
             "from_address": self.smtp_from.text().strip(),
         })
+
+        # Apply theme change immediately to parent window
+        parent = self.parent()
+        if parent and hasattr(parent, 'apply_theme'):
+            parent.apply_theme()
+
         self.accept()

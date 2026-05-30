@@ -16,13 +16,14 @@ class FTPTransport(BaseTransport):
 
     def __init__(self, host: str, port: int = 21, username: str = "",
                  password: str = "", remote_dir: str = "/civ4pbem",
-                 use_tls: bool = False):
+                 use_tls: bool = False, ignore_ssl: bool = True):
         self.host = host
         self.port = port
         self.username = username
         self.password = password
         self.remote_dir = remote_dir
         self.use_tls = use_tls
+        self.ignore_ssl = ignore_ssl
         self._ftp: Optional[ftplib.FTP] = None
 
     @property
@@ -38,7 +39,14 @@ class FTPTransport(BaseTransport):
     def connect(self) -> bool:
         try:
             if self.use_tls:
-                self._ftp = ftplib.FTP_TLS()
+                import ssl
+                if self.ignore_ssl:
+                    ssl_ctx = ssl.create_default_context()
+                    ssl_ctx.check_hostname = False
+                    ssl_ctx.verify_mode = ssl.CERT_NONE
+                    self._ftp = ftplib.FTP_TLS(context=ssl_ctx)
+                else:
+                    self._ftp = ftplib.FTP_TLS()
             else:
                 self._ftp = ftplib.FTP()
 

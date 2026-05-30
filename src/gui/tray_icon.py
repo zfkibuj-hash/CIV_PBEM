@@ -3,6 +3,7 @@ System tray icon with balloon notifications.
 Allows the app to run minimized in the system tray and notify the user
 when it's their turn.
 """
+import sys
 import logging
 from pathlib import Path
 from typing import Optional
@@ -12,6 +13,15 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import pyqtSignal, QObject
 
 logger = logging.getLogger(__name__)
+
+
+def _get_icon_path() -> Path:
+    """Get path to icon.ico, works both in dev and frozen .exe."""
+    if getattr(sys, 'frozen', False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).parent.parent.parent
+    return base / "icon.ico"
 
 
 class TrayIcon(QObject):
@@ -34,15 +44,19 @@ class TrayIcon(QObject):
 
         self._tray = QSystemTrayIcon(self.parent())
 
-        # Try to load the app icon
-        icon_path = Path(__file__).parent.parent.parent / "icon.ico"
+        # Load icon - try multiple paths
+        icon_path = _get_icon_path()
         if icon_path.exists():
-            self._tray.setIcon(QIcon(str(icon_path)))
+            icon = QIcon(str(icon_path))
         else:
-            # Fallback: use application icon
+            # Fallback: use application-level icon
             app = QApplication.instance()
-            if app:
-                self._tray.setIcon(app.windowIcon())
+            icon = app.windowIcon() if app else QIcon()
+
+        if icon.isNull():
+            logger.warning(f"Tray icon is null, path tried: {icon_path}")
+        else:
+            self._tray.setIcon(icon)
 
         self._tray.setToolTip("Civ4 PBEM Manager")
 
