@@ -890,7 +890,7 @@ class SettingsDialog(QDialog):
         type_group = QGroupBox("Metoda transportu")
         type_form = QFormLayout(type_group)
         self.transport_type = QComboBox()
-        self.transport_type.addItems(["ftp", "sftp", "webdav", "email", "synology"])
+        self.transport_type.addItems(["ftp", "sftp", "webdav", "email"])
         self.transport_type.setCurrentText(tc.get("type", "ftp"))
         self.transport_type.currentTextChanged.connect(self._on_transport_type_changed)
         type_form.addRow("Typ:", self.transport_type)
@@ -980,30 +980,6 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(self.email_transport_group)
 
-        # Synology Sharing Links settings
-        self.synology_transport_group = QGroupBox("Synology - linki udostepniania")
-        syno_form = QFormLayout(self.synology_transport_group)
-
-        snc = tc.get("synology", {})
-        self.syno_upload_url = QLineEdit(snc.get("upload_url", ""))
-        self.syno_upload_url.setPlaceholderText("https://twoj.synology.me:5001/sharing/XXXXXXX")
-        syno_form.addRow("URL uploadu:", self.syno_upload_url)
-
-        self.syno_upload_password = QLineEdit(snc.get("upload_password", ""))
-        self.syno_upload_password.setEchoMode(QLineEdit.Password)
-        syno_form.addRow("Haslo uploadu:", self.syno_upload_password)
-
-        self.syno_download_url = QLineEdit(snc.get("download_url", ""))
-        self.syno_download_url.setPlaceholderText("https://gofile.me/XXXXX/XXXXXXX")
-        syno_form.addRow("URL pobierania:", self.syno_download_url)
-
-        self.syno_download_password = QLineEdit(snc.get("download_password", ""))
-        self.syno_download_password.setEchoMode(QLineEdit.Password)
-        self.syno_download_password.setPlaceholderText("puste = takie samo jak uploadu")
-        syno_form.addRow("Haslo pobierania:", self.syno_download_password)
-
-        layout.addWidget(self.synology_transport_group)
-
         # Show/hide based on current type
         self._on_transport_type_changed(self.transport_type.currentText())
 
@@ -1061,7 +1037,6 @@ class SettingsDialog(QDialog):
         """Show/hide transport panels based on selected type."""
         self.file_transport_group.setVisible(transport_type in ("ftp", "sftp", "webdav"))
         self.email_transport_group.setVisible(transport_type == "email")
-        self.synology_transport_group.setVisible(transport_type == "synology")
 
     def _browse_path(self):
         path = QFileDialog.getExistingDirectory(
@@ -1099,12 +1074,6 @@ class SettingsDialog(QDialog):
                 "mode": self.et_mode.currentText(),
                 "shared_email": self.et_shared_email.text().strip(),
                 "from_address": self.et_from_address.text().strip(),
-            },
-            "synology": {
-                "upload_url": self.syno_upload_url.text().strip(),
-                "upload_password": self.syno_upload_password.text(),
-                "download_url": self.syno_download_url.text().strip(),
-                "download_password": self.syno_download_password.text(),
             },
         }
         self.config.set("transport", transport_data)
@@ -1184,7 +1153,7 @@ class GameTransportDialog(QDialog):
         type_group = QGroupBox("Metoda transportu")
         type_form = QFormLayout(type_group)
         self.transport_type = QComboBox()
-        self.transport_type.addItems(["ftp", "sftp", "webdav", "email", "synology"])
+        self.transport_type.addItems(["ftp", "sftp", "webdav", "email"])
         self.transport_type.setCurrentText(tc.get("type", "ftp"))
         self.transport_type.currentTextChanged.connect(self._on_type_changed)
         type_form.addRow("Typ:", self.transport_type)
@@ -1248,23 +1217,6 @@ class GameTransportDialog(QDialog):
         email_form.addRow("Od:", self.e_from)
         form_layout.addWidget(self.email_group)
 
-        # Synology
-        self.syno_group = QGroupBox("Synology Sharing")
-        syno_form = QFormLayout(self.syno_group)
-        sc = tc.get("synology", {})
-        self.s_upload_url = QLineEdit(sc.get("upload_url", ""))
-        syno_form.addRow("URL uploadu:", self.s_upload_url)
-        self.s_upload_pass = QLineEdit(sc.get("upload_password", ""))
-        self.s_upload_pass.setEchoMode(QLineEdit.Password)
-        syno_form.addRow("Haslo uploadu:", self.s_upload_pass)
-        self.s_download_url = QLineEdit(sc.get("download_url", ""))
-        syno_form.addRow("URL pobierania:", self.s_download_url)
-        self.s_download_pass = QLineEdit(sc.get("download_password", ""))
-        self.s_download_pass.setEchoMode(QLineEdit.Password)
-        self.s_download_pass.setPlaceholderText("puste = jak uploadu")
-        syno_form.addRow("Haslo pobierania:", self.s_download_pass)
-        form_layout.addWidget(self.syno_group)
-
         form_layout.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll)
@@ -1281,7 +1233,6 @@ class GameTransportDialog(QDialog):
     def _on_type_changed(self, t: str):
         self.file_group.setVisible(t in ("ftp", "sftp", "webdav"))
         self.email_group.setVisible(t == "email")
-        self.syno_group.setVisible(t == "synology")
 
     def _copy_from_defaults(self):
         """Copy transport config from global defaults."""
@@ -1322,12 +1273,6 @@ class GameTransportDialog(QDialog):
         self.e_imap_pass.setText(ec.get("imap_password", ""))
         self.e_from.setText(ec.get("from_address", ""))
 
-        sc = tc.get("synology", {})
-        self.s_upload_url.setText(sc.get("upload_url", ""))
-        self.s_upload_pass.setText(sc.get("upload_password", ""))
-        self.s_download_url.setText(sc.get("download_url", ""))
-        self.s_download_pass.setText(sc.get("download_password", ""))
-
     def get_transport_config(self) -> dict:
         """Build transport config dict from form fields."""
         return {
@@ -1352,11 +1297,5 @@ class GameTransportDialog(QDialog):
                 "imap_password": self.e_imap_pass.text(),
                 "imap_use_ssl": True,
                 "from_address": self.e_from.text().strip(),
-            },
-            "synology": {
-                "upload_url": self.s_upload_url.text().strip(),
-                "upload_password": self.s_upload_pass.text(),
-                "download_url": self.s_download_url.text().strip(),
-                "download_password": self.s_download_pass.text(),
             },
         }

@@ -8,7 +8,7 @@ Use this prompt to instruct Claude (or any LLM) to generate the complete applica
 
 You are building a **Windows desktop application** called "Civ4 PBEM Manager" — a tool for managing Play-By-Email (PBEM) games of Civilization 4: Beyond the Sword.
 
-Each player installs this same app on their PC. The app handles uploading/downloading save files between players via a shared transport (FTP, SFTP, WebDAV, Synology Sharing Links, or Email), and notifies the next player by email when it's their turn.
+Each player installs this same app on their PC. The app handles uploading/downloading save files between players via a shared transport (FTP, SFTP, WebDAV, or Email), and notifies the next player by email when it's their turn.
 
 ### Tech Stack
 - **Python 3.10+**
@@ -40,8 +40,7 @@ CIV_PBEM/
     │   ├── base.py                  # BaseTransport ABC
     │   ├── ftp_transport.py         # FTP/FTPS (with ignore_ssl support)
     │   ├── sftp_transport.py        # SFTP via paramiko (AutoAddPolicy)
-    │   ├── webdav_transport.py      # WebDAV via urllib (with ignore_ssl support)
-    │   ├── synology_sharing_transport.py  # Synology File Request + GoFile sharing links
+    │   ├── webdav_transport.py      # WebDAV via urllib (with ignore_ssl support, works with Synology WebDAV Server)
     │   └── email_transport.py       # SMTP upload + IMAP download of saves as attachments
     ├── notifier/
     │   ├── __init__.py
@@ -70,7 +69,7 @@ CIV_PBEM/
 - `AppController._create_transport_for_game(game)` creates a transport instance from game's config
 - No global transport on controller — each operation creates fresh transport for the specific game
 - **GameTransportDialog**: full transport editor per game with:
-  - Same fields as global settings (ftp/sftp/webdav/email/synology panels)
+  - Same fields as global settings (ftp/sftp/webdav/email panels)
   - **"Kopiuj ustawienia z..."** section at top:
     - "Domyślne (globalne)" button — copies from app-wide Settings → Transport tab
     - Dropdown of other games + "Kopiuj" button — copies from another game's config
@@ -106,7 +105,7 @@ CIV_PBEM/
 - Already-existing local files: reports "Save juz istnieje lokalnie" without re-downloading
 - `controller.download_specific_save(game, filename)`: downloads a chosen file by name
 
-#### 7. Transport Layer (abstract base + 5 implementations)
+#### 7. Transport Layer (abstract base + 4 implementations)
 - `BaseTransport` ABC: `connect()`, `disconnect()`, `upload()`, `download()`, `list_files()`, `file_exists()`, `is_connected`, `get_latest_save()`
 - All HTTPS/TLS transports respect `ignore_ssl` flag (per-game config, default ON)
 
@@ -119,11 +118,7 @@ CIV_PBEM/
 
 ##### WebDAV
 - urllib-based (PROPFIND/PUT/GET/MKCOL). All `urlopen()` pass `context=ssl_ctx`
-
-##### Synology Sharing Links
-- Upload via File Request link (multipart POST). Download via GoFile-style shared folder link
-- **Separate passwords** for upload and download. Fallback: download_password empty → uses upload_password
-- Handles self-signed certs. `list_files()` not available — relies on game state sync
+- Works with Synology WebDAV Server, Nextcloud, etc.
 
 ##### Email
 - SMTP send + IMAP receive. Two modes: `shared` (one mailbox) or `individual` (direct to player)
@@ -190,7 +185,6 @@ CIV_PBEM/
 - Per-game transport: each game is independent. Global settings serve as template for "copy from defaults"
 - Game state sync: upload `{game}_state.json` after each turn so other players' apps detect changes
 - Credential fallback for notifications: only login/password (never host/port — IMAP port ≠ SMTP port!)
-- Synology: separate upload/download passwords (download falls back to upload if empty)
 - Settings save → `settings_saved` signal → `controller.reload_config()` — critical for first-time setup!
 - Revert notifies ALL players. Upload only notifies next player.
 - Download with duplicates: user chooses which save via dialog

@@ -16,7 +16,6 @@ from src.transport.ftp_transport import FTPTransport
 from src.transport.sftp_transport import SFTPTransport
 from src.transport.webdav_transport import WebDAVTransport
 from src.transport.email_transport import EmailTransport
-from src.transport.synology_sharing_transport import SynologySharingTransport
 from src.notifier.email_notifier import EmailNotifier
 
 logger = logging.getLogger(__name__)
@@ -66,21 +65,6 @@ class AppController(QObject):
                 mode=ec.get("mode", "shared"),
                 shared_email=ec.get("shared_email", ""),
                 from_address=ec.get("from_address", ""),
-            )
-
-        if transport_type == "synology":
-            sc = tc.get("synology", {})
-            upload_url = sc.get("upload_url", "")
-            if not upload_url:
-                return None
-            upload_pw = sc.get("upload_password", "")
-            download_pw = sc.get("download_password", "") or upload_pw
-            return SynologySharingTransport(
-                upload_url=upload_url,
-                download_url=sc.get("download_url", ""),
-                upload_password=upload_pw,
-                download_password=download_pw,
-                ignore_ssl=ignore_ssl,
             )
 
         host = tc.get("host", "")
