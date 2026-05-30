@@ -174,8 +174,8 @@ class AppController(QObject):
             return False, "Transport nie jest skonfigurowany"
 
         my_name = self.config.player_name
-        if not game.is_my_turn(my_name):
-            return False, "To nie Twoja kolej!"
+        # Note: we no longer block upload based on turn order.
+        # The user decides when to send. Turn tracking is advisory.
 
         remote_filename = game.get_save_filename(my_name)
 

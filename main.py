@@ -210,13 +210,43 @@ def main():
     window.btn_check_now.clicked.disconnect()
     window.btn_check_now.clicked.connect(lambda: handle_check(from_tray=False))
 
-    # Connect revert button
+    # Connect revert: window._on_revert_turn shows dialog and sets _revert_history_index,
+    # then we need to actually call the controller. Override the button fully.
     window.btn_revert.clicked.disconnect()
 
     def handle_revert():
-        if window.current_game and hasattr(window, '_revert_history_index'):
-            idx = window._revert_history_index
-            success, msg = controller.revert_turn(window.current_game, idx)
+        if not window.current_game:
+            return
+
+        selected = window.history_list.currentItem()
+        if not selected:
+            from PyQt5.QtWidgets import QMessageBox as MB
+            MB.information(window, "Info", "Zaznacz ture z listy aby ja przywrocic.")
+            return
+
+        from PyQt5.QtCore import Qt as QtConst
+        history_index = selected.data(QtConst.UserRole)
+        if history_index is None:
+            return
+
+        game = window.current_game
+        if history_index >= len(game.history):
+            return
+        target = game.history[history_index]
+
+        from PyQt5.QtWidgets import QMessageBox as MB
+        reply = MB.warning(
+            window,
+            "Przywrocenie tury",
+            f"Czy na pewno chcesz przywrocic gre do tury {target.turn_number} "
+            f"(gracz: {target.player_name})?\n\n"
+            f"Wszystkie pozniejsze tury zostana usuniete.\n"
+            f"Wszyscy gracze otrzymaja powiadomienie.",
+            MB.Yes | MB.No,
+            MB.No,
+        )
+        if reply == MB.Yes:
+            success, msg = controller.revert_turn(game, history_index)
             window.status_label.setText(msg)
             if success:
                 window._load_games()
