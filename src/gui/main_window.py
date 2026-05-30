@@ -230,6 +230,11 @@ class MainWindow(QMainWindow):
         self.btn_open_folder.setMinimumHeight(44)
         actions_layout.addWidget(self.btn_open_folder)
 
+        self.btn_check_now = QPushButton("Sprawdz teraz")
+        self.btn_check_now.clicked.connect(self._on_manual_check)
+        self.btn_check_now.setMinimumHeight(44)
+        actions_layout.addWidget(self.btn_check_now)
+
         content_layout.addLayout(actions_layout)
 
         # History
@@ -399,11 +404,31 @@ class MainWindow(QMainWindow):
             else:
                 subprocess.Popen(["xdg-open", str(save_path)])
 
+    def _on_manual_check(self):
+        """Manual check triggered by the user - checks and resets timer."""
+        self.status_label.setText("Sprawdzanie nowych save'ow...")
+        QApplication.processEvents()
+        # Reset the periodic timer so the next auto-check is a full interval away
+        self.check_timer.stop()
+        interval_ms = self.config.check_interval_minutes * 60 * 1000
+        self.check_timer.start(interval_ms)
+        # The actual check logic will be connected in main.py
+        self._on_check_timer()
+
     def _on_check_timer(self):
         """Periodic check for new saves."""
         self.status_label.setText("Sprawdzanie nowych save'ow...")
         # This will be implemented by app controller
         QTimer.singleShot(2000, lambda: self.status_label.setText("Gotowy"))
+
+    def closeEvent(self, event):
+        """Minimize to tray instead of closing, if tray is available."""
+        if hasattr(self, '_minimize_to_tray') and self._minimize_to_tray:
+            event.ignore()
+            self.hide()
+            self.status_label.setText("Zminimalizowano do tray")
+        else:
+            event.accept()
 
 
 class NewGameDialog(QDialog):
