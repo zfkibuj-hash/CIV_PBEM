@@ -75,6 +75,32 @@ class Game:
         if self.current_player_index == 0:
             self.current_turn += 1
 
+    def revert_to_turn(self, history_index: int) -> Optional["Turn"]:
+        """Revert game state to a specific point in history.
+
+        Removes all history entries after the given index and resets
+        current_turn and current_player_index to match that point.
+        Returns the Turn record we reverted to, or None if invalid.
+        """
+        if history_index < 0 or history_index >= len(self.history):
+            return None
+
+        target_turn = self.history[history_index]
+
+        # Remove all history after this point
+        self.history = self.history[:history_index]
+
+        # Reset game state to just before that turn was played
+        self.current_turn = target_turn.turn_number
+
+        # Find the player who made that turn and set them as current
+        for i, p in enumerate(self.players):
+            if p.name == target_turn.player_name:
+                self.current_player_index = i
+                break
+
+        return target_turn
+
     def get_save_filename(self, player_name: str) -> str:
         """Generate expected save filename pattern."""
         return f"{self.name}_T{self.current_turn:04d}_{player_name}.CivBeyondSwordSave"

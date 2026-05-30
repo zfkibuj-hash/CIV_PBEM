@@ -20,7 +20,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [1/3] Instalowanie zaleznosci...
+echo [1/4] Instalowanie zaleznosci...
 pip install -r requirements.txt
 if errorlevel 1 (
     echo [BLAD] Nie udalo sie zainstalowac zaleznosci!
@@ -29,7 +29,27 @@ if errorlevel 1 (
 )
 echo.
 
-echo [2/3] Budowanie .exe...
+echo [2/4] Generowanie ikony (jesli brak)...
+if not exist icon.ico (
+    pip install Pillow --quiet
+    python generate_icon.py
+)
+echo.
+
+echo [3/4] Sprawdzanie UPX (kompresja)...
+where upx >nul 2>&1
+if errorlevel 1 (
+    echo [INFO] UPX nie znaleziony - budowanie bez kompresji.
+    echo        Dla mniejszego .exe zainstaluj UPX:
+    echo        https://github.com/upx/upx/releases
+    echo        i dodaj do PATH.
+    echo.
+) else (
+    echo [OK] UPX znaleziony - kompresja wlaczona.
+    echo.
+)
+
+echo [4/4] Budowanie .exe...
 pyinstaller build.spec --noconfirm
 if errorlevel 1 (
     echo [BLAD] Budowanie nie powiodlo sie!
@@ -38,12 +58,16 @@ if errorlevel 1 (
 )
 echo.
 
-echo [3/3] Gotowe!
-echo.
+:: Show result size
 echo ==========================================
-echo   Plik wynikowy: dist\Civ4PBEMManager.exe
+echo   GOTOWE!
 echo ==========================================
 echo.
-echo Mozesz skopiowac dist\Civ4PBEMManager.exe gdzie chcesz.
+for %%A in (dist\Civ4PBEMManager.exe) do echo   Plik: dist\Civ4PBEMManager.exe (%%~zA bytes)
+echo.
+echo   Wskazowki aby zmniejszyc rozmiar:
+echo   1. Zainstaluj UPX i dodaj do PATH (oszczedza ~30%%)
+echo   2. Uzyj PyQt5-slim: pip install PyQt5==5.15.9 (bez WebEngine)
+echo   3. Wiecej info: README.md
 echo.
 pause

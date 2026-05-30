@@ -415,13 +415,18 @@ class MainWindow(QMainWindow):
 
         content_layout.addLayout(actions_layout)
 
-        # History
-        history_group = QGroupBox("Historia tur")
+        # History - clickable list for turn revert
+        history_group = QGroupBox("Historia tur (kliknij aby przywrocic)")
         history_layout = QVBoxLayout(history_group)
-        self.history_text = QTextEdit()
-        self.history_text.setReadOnly(True)
-        self.history_text.setMaximumHeight(150)
-        history_layout.addWidget(self.history_text)
+        self.history_list = QListWidget()
+        self.history_list.setMaximumHeight(160)
+        history_layout.addWidget(self.history_list)
+
+        self.btn_revert = QPushButton("Przywroc zaznaczona ture")
+        self.btn_revert.setStyleSheet("color: #ff9800; border-color: #ff9800;")
+        self.btn_revert.clicked.connect(self._on_revert_turn)
+        history_layout.addWidget(self.btn_revert)
+
         content_layout.addWidget(history_group)
 
         content_layout.addStretch()
@@ -512,13 +517,16 @@ class MainWindow(QMainWindow):
         self.players_label.setText(players_text)
 
         # History
-        self.history_text.clear()
+        self.history_list.clear()
         for turn in reversed(game.history[-20:]):
             import datetime
             dt = datetime.datetime.fromtimestamp(turn.timestamp)
-            self.history_text.append(
-                f"{dt.strftime('%d.%m %H:%M')}  {turn.player_name} -> upload (tura {turn.turn_number})"
-            )
+            text = f"{dt.strftime('%d.%m %H:%M')}  {turn.player_name} -> tura {turn.turn_number}  [{turn.filename}]"
+            item = QListWidgetItem(text)
+            # Store the history index as user data
+            idx = game.history.index(turn)
+            item.setData(Qt.UserRole, idx)
+            self.history_list.addItem(item)
 
     def _on_new_game(self):
         """Create a new game dialog."""
@@ -582,6 +590,40 @@ class MainWindow(QMainWindow):
             else:
                 subprocess.Popen(["xdg-open", str(save_path)])
 
+    def _on_revert_turn(self):
+        """Revert game to a selected turn from history."""
+        if not self.current_game:
+            return
+
+        selected = self.history_list.currentItem()
+        if not selected:
+            QMessageBox.information(self, "Info", "Zaznacz ture z listy aby ja przywrocic.")
+            return
+
+        history_index = selected.data(Qt.UserRole)
+        if history_index is None:
+            return
+
+        game = self.current_game
+        target = game.history[history_index] if history_index < len(game.history) else None
+        if not target:
+            return
+
+        reply = QMessageBox.warning(
+            self,
+            "Przywrocenie tury",
+            f"Czy na pewno chcesz przywrocic gre do tury {target.turn_number} "
+            f"(gracz: {target.player_name})?\n\n"
+            f"Wszystkie pozniejsze tury zostana usuniete.\n"
+            f"Wszyscy gracze otrzymaja powiadomienie.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            # Actual revert will be handled by controller (connected in main.py)
+            self._revert_history_index = history_index
+            self.status_label.setText(f"Przywracanie tury {target.turn_number}...")
+
     def _on_manual_check(self):
         """Manual check triggered by the user - checks and resets timer."""
         self.status_label.setText("Sprawdzanie nowych save'ow...")
@@ -622,7 +664,7 @@ class NewGameDialog(QDialog):
         self.config = config
         self.setWindowTitle("Nowa gra")
         self.setMinimumWidth(450)
-        self.setStyleSheet(DARK_STYLE)
+        self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
         self._init_ui()
 
     def _init_ui(self):
@@ -718,7 +760,7 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Ustawienia")
         self.setMinimumSize(520, 480)
         self.resize(540, 520)
-        self.setStyleSheet(DARK_STYLE)
+        self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
         self._init_ui()
 
     def _init_ui(self):

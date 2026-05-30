@@ -239,6 +239,57 @@ class AppController(QObject):
                 except Exception as e:
                     logger.error(f"Failed to sync game state: {e}")
 
+    def revert_turn(self, game: Game, history_index: int) -> tuple[bool, str]:
+        """Revert a game to a specific turn and notify all players.
+
+        Downloads the save from that turn (if available) and notifies everyone.
+        """
+        if history_index < 0 or history_index >= len(game.history):
+            return False, "Nieprawidlowy indeks tury"
+
+        target_turn = game.history[history_index]
+        my_name = self.config.player_name
+
+        # Try to download the save from that turn (so user can re-play it)
+        if self._transport and target_turn.filename:
+            save_dir = Path(self.config.save_path)
+            save_dir.mkdir(parents=True, exist_ok=True)
+            local_path = save_dir / target_turn.filename
+            self._transport.download(target_turn.filename, local_path, game.name)
+
+        # Revert game state
+        reverted = game.revert_to_turn(history_index)
+        if not reverted:
+            return False, "Nie udalo sie przywrocic tury"
+
+        # Save updated game state
+        game.save_to_file(get_games_dir())
+
+        # Upload reverted state so other players sync
+        if self._transport:
+            game_state_path = get_games_dir() / f"{game.name}.json"
+            self._transport.upload(game_state_path, f"{game.name}_state.json", game.name)
+
+        # Notify ALL players about the revert
+        if self._notifier:
+            for player in game.players:
+                if player.name == my_name:
+                    continue  # Don't notify yourself
+                self._notifier._send_email(
+                    to_email=player.email,
+                    subject=f"[Civ4 PBEM] {game.name} - TURA PRZYWROCONA!",
+                    body=(
+                        f"Gracz {my_name} przywrocil gre '{game.name}' "
+                        f"do tury {reverted.turn_number}.\n\n"
+                        f"Powod: koniecznosc powtorzenia tury.\n"
+                        f"Obecny gracz: {game.current_player.name if game.current_player else '?'}\n\n"
+                        f"Uruchom Civ4 PBEM Manager aby zsynchronizowac stan gry.\n"
+                    ),
+                )
+
+        self.games_updated.emit()
+        return True, f"Przywrocono do tury {reverted.turn_number} ({reverted.player_name})"
+
     def test_transport(self) -> tuple[bool, str]:
         """Test transport connection."""
         if not self._transport:

@@ -207,6 +207,20 @@ def main():
     window.btn_check_now.clicked.disconnect()
     window.btn_check_now.clicked.connect(lambda: handle_check(from_tray=False))
 
+    # Connect revert button
+    window.btn_revert.clicked.disconnect()
+
+    def handle_revert():
+        if window.current_game and hasattr(window, '_revert_history_index'):
+            idx = window._revert_history_index
+            success, msg = controller.revert_turn(window.current_game, idx)
+            window.status_label.setText(msg)
+            if success:
+                window._load_games()
+                window._update_game_view()
+
+    window.btn_revert.clicked.connect(handle_revert)
+
     # --- Cleanup on exit ---
     def on_quit():
         watcher.stop()
