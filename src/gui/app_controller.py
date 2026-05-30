@@ -92,7 +92,8 @@ class AppController(QObject):
         if transport_type == "ftp":
             self._transport = FTPTransport(
                 host=host, port=port, username=username,
-                password=password, remote_dir=remote_dir
+                password=password, remote_dir=remote_dir,
+                ignore_ssl=ignore_ssl,
             )
         elif transport_type == "sftp":
             self._transport = SFTPTransport(
