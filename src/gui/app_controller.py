@@ -78,7 +78,8 @@ class AppController(QObject):
             self._transport = SynologySharingTransport(
                 upload_url=upload_url,
                 download_url=sc.get("download_url", ""),
-                password=sc.get("password", ""),
+                upload_password=sc.get("upload_password", ""),
+                download_password=sc.get("download_password", ""),
             )
             return
 

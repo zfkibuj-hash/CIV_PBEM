@@ -39,10 +39,11 @@ class SynologySharingTransport(BaseTransport):
     """
 
     def __init__(self, upload_url: str = "", download_url: str = "",
-                 password: str = ""):
+                 upload_password: str = "", download_password: str = ""):
         self.upload_url = upload_url.rstrip("/")
         self.download_url = download_url.rstrip("/")
-        self.password = password
+        self.upload_password = upload_password
+        self.download_password = download_password
         self._connected = False
         # Synology self-signed certs — create permissive SSL context
         self._ssl_ctx = ssl.create_default_context()
@@ -113,7 +114,7 @@ class SynologySharingTransport(BaseTransport):
                     "method": "upload",
                     "version": "1",
                     "sharing_id": sharing_id,
-                    "password": self.password,
+                    "password": self.upload_password,
                 },
                 file_field="file",
                 filename=remote_filename,
@@ -147,7 +148,7 @@ class SynologySharingTransport(BaseTransport):
             boundary = "----Civ4PBEMUpload"
             body = self._build_multipart(
                 boundary=boundary,
-                fields={"password": self.password},
+                fields={"password": self.upload_password},
                 file_field="file",
                 filename=remote_filename,
                 file_data=file_data,
@@ -175,7 +176,7 @@ class SynologySharingTransport(BaseTransport):
         try:
             # Try direct file access with password
             file_urls = [
-                f"{self.download_url}/{remote_filename}?password={urllib.parse.quote(self.password)}",
+                f"{self.download_url}/{remote_filename}?password={urllib.parse.quote(self.download_password)}",
                 f"{self.download_url}/{remote_filename}",
             ]
 
@@ -215,7 +216,7 @@ class SynologySharingTransport(BaseTransport):
                 f"{base_url}/webapi/entry.cgi?"
                 f"api=SYNO.FileStation.Sharing.Download&method=download&version=1"
                 f"&sharing_id={sharing_id}"
-                f"&password={urllib.parse.quote(self.password)}"
+                f"&password={urllib.parse.quote(self.download_password)}"
                 f"&filename={urllib.parse.quote(remote_filename)}"
             )
 

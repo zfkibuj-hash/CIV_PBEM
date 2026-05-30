@@ -897,13 +897,17 @@ class SettingsDialog(QDialog):
         self.syno_upload_url.setPlaceholderText("https://twoj.synology.me:5001/sharing/XXXXXXX")
         syno_form.addRow("URL uploadu:", self.syno_upload_url)
 
+        self.syno_upload_password = QLineEdit(snc.get("upload_password", ""))
+        self.syno_upload_password.setEchoMode(QLineEdit.Password)
+        syno_form.addRow("Haslo uploadu:", self.syno_upload_password)
+
         self.syno_download_url = QLineEdit(snc.get("download_url", ""))
         self.syno_download_url.setPlaceholderText("https://gofile.me/XXXXX/XXXXXXX")
         syno_form.addRow("URL pobierania:", self.syno_download_url)
 
-        self.syno_password = QLineEdit(snc.get("password", ""))
-        self.syno_password.setEchoMode(QLineEdit.Password)
-        syno_form.addRow("Haslo:", self.syno_password)
+        self.syno_download_password = QLineEdit(snc.get("download_password", ""))
+        self.syno_download_password.setEchoMode(QLineEdit.Password)
+        syno_form.addRow("Haslo pobierania:", self.syno_download_password)
 
         layout.addWidget(self.synology_transport_group)
 
@@ -1002,8 +1006,9 @@ class SettingsDialog(QDialog):
             },
             "synology": {
                 "upload_url": self.syno_upload_url.text().strip(),
+                "upload_password": self.syno_upload_password.text(),
                 "download_url": self.syno_download_url.text().strip(),
-                "password": self.syno_password.text(),
+                "download_password": self.syno_download_password.text(),
             },
         }
         self.config.set("transport", transport_data)
