@@ -980,7 +980,7 @@ class SettingsDialog(QDialog):
 
         sc = self.config.smtp_config
         self.smtp_host = QLineEdit(sc.get("host", ""))
-        self.smtp_host.setPlaceholderText("puste = z transportu email")
+        self.smtp_host.setPlaceholderText("np. smtp.gmail.com")
         smtp_form.addRow("Host SMTP:", self.smtp_host)
 
         self.smtp_port = QSpinBox()
@@ -1004,9 +1004,9 @@ class SettingsDialog(QDialog):
         layout.addWidget(smtp_group)
 
         info_label = QLabel(
-            "Jesli zostawisz pola puste, dane zostana pobrane\n"
-            "z konfiguracji transportu email (jesli jest ustawiony).\n"
-            "Mozesz tez podac inne dane niz transport."
+            "Host i port musisz podac recznie.\n"
+            "Login i haslo: jesli puste, beda uzyte dane\n"
+            "z zakladki Transport (jesli typ = email)."
         )
         info_label.setWordWrap(True)
         info_label.setStyleSheet("color: #9e9e9e; font-size: 9pt; padding: 8px;")

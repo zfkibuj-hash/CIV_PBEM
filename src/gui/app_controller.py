@@ -113,24 +113,27 @@ class AppController(QObject):
     def _init_notifier(self):
         """Initialize email notifier.
 
-        Fallback logic: if SMTP notification fields are empty, try to
-        reuse credentials from email transport config (same server/login).
+        Fallback (login/password ONLY): if empty in notification config,
+        reuse SMTP credentials from email transport config.
+        Host and port are NEVER inherited - must be set explicitly.
         """
         sc = self.config.smtp_config
         tc = self.config.transport_config
         ec = tc.get("email", {})
 
-        # Resolve SMTP host: notification config first, fallback to email transport
-        smtp_host = sc.get("host", "") or ec.get("smtp_host", "")
+        # Host must be explicitly set - no fallback
+        smtp_host = sc.get("host", "")
         if not smtp_host:
             self._notifier = None
             return
 
-        # Fallback: use email transport credentials if notification ones are empty
-        smtp_port = sc.get("port", 0) or ec.get("smtp_port", 587)
+        # Port - no fallback, use what's configured
+        smtp_port = sc.get("port", 587)
+
+        # Login/password fallback: if empty, try email transport SMTP creds
         smtp_user = sc.get("username", "") or ec.get("smtp_user", "")
         smtp_pass = sc.get("password", "") or ec.get("smtp_password", "")
-        from_addr = sc.get("from_address", "") or ec.get("from_address", "") or smtp_user
+        from_addr = sc.get("from_address", "") or smtp_user
 
         self._notifier = EmailNotifier(
             host=smtp_host,
