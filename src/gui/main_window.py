@@ -128,6 +128,28 @@ QTextEdit {
 QSplitter::handle {
     background-color: #555;
 }
+QTabWidget::pane {
+    border: 1px solid #555;
+    background-color: #1e1e1e;
+}
+QTabBar::tab {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    border: 1px solid #555;
+    border-bottom: none;
+    padding: 8px 20px;
+    margin-right: 2px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+QTabBar::tab:selected {
+    background-color: #1e1e1e;
+    color: #42a5f5;
+    border-bottom: 2px solid #42a5f5;
+}
+QTabBar::tab:hover:!selected {
+    background-color: #383838;
+}
 """
 
 
