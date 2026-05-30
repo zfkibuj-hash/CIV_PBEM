@@ -221,7 +221,7 @@ def main():
                     window._load_games()
 
     def handle_check(from_tray: bool = False):
-        """Check for new saves, reset timer, and show notifications."""
+        """Check for new saves, auto-download if it's your turn, reset timer."""
         window.status_label.setText("Sprawdzanie nowych save'ow...")
         QApplication.processEvents()
 
@@ -232,14 +232,30 @@ def main():
 
         # Perform the actual check
         notifications = controller.check_for_new_saves(window.games)
-        if notifications:
-            status_msg = " | ".join(notifications)
-            window.status_label.setText(status_msg)
 
-            # Show tray balloon for each game where it's your turn
+        # Auto-download saves for games where it's your turn
+        my_name = config.player_name
+        downloaded = []
+        for game in window.games:
+            if game.is_my_turn(my_name):
+                success, msg = controller.download_save(game)
+                if success:
+                    downloaded.append(f"{game.name}: {msg}")
+
+        if downloaded:
+            dl_msg = " | ".join(downloaded)
+            window.status_label.setText(f"Pobrano: {dl_msg}")
             if tray.is_available:
                 for game in window.games:
-                    if game.is_my_turn(config.player_name):
+                    if game.is_my_turn(my_name):
+                        tray.notify_your_turn(game.name, game.current_turn)
+            window._load_games()
+        elif notifications:
+            status_msg = " | ".join(notifications)
+            window.status_label.setText(status_msg)
+            if tray.is_available:
+                for game in window.games:
+                    if game.is_my_turn(my_name):
                         tray.notify_your_turn(game.name, game.current_turn)
         else:
             window.status_label.setText("Sprawdzono - brak nowych save'ow")
