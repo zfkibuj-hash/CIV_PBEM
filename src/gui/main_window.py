@@ -469,6 +469,9 @@ class MainWindow(QMainWindow):
         games_dir = get_games_dir()
         self.games = []
         for f in games_dir.glob("*.json"):
+            # Skip remote sync files (used internally for state sync)
+            if f.stem.endswith("_remote"):
+                continue
             try:
                 game = Game.load_from_file(f)
                 self.games.append(game)

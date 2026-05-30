@@ -217,8 +217,7 @@ def main():
             if filepath:
                 success, msg = controller.upload_save(game, Path(filepath))
                 window.status_label.setText(msg)
-                if success:
-                    window._load_games()
+                # games_updated signal from controller handles _load_games
 
     def handle_check(from_tray: bool = False):
         """Check for new saves, auto-download if it's your turn, reset timer."""

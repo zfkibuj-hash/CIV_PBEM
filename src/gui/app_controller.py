@@ -131,22 +131,50 @@ class AppController(QObject):
         self._init_notifier()
 
     def download_save(self, game: Game) -> tuple[bool, str]:
-        """Download the latest save for a game. Returns (success, message)."""
+        """Download the latest save meant for this player.
+
+        Logic: a save named _SenderName means it was sent BY that player.
+        This player should download saves sent by the PREVIOUS player in turn order.
+        """
         transport = self._create_transport_for_game(game)
         if not transport:
             return False, "Transport nie jest skonfigurowany dla tej gry"
 
-        latest = transport.get_latest_save(game.name)
-        if not latest:
-            return False, "Brak save'a do pobrania"
+        my_name = self.config.player_name
+
+        # Find who should have sent me the save (previous player in order)
+        my_index = None
+        for i, p in enumerate(game.players):
+            if p.name == my_name:
+                my_index = i
+                break
+
+        if my_index is None:
+            return False, f"Gracz '{my_name}' nie jest w tej grze"
+
+        prev_index = (my_index - 1) % len(game.players)
+        prev_player = game.players[prev_index]
+
+        # Get all saves and filter for ones sent by previous player
+        all_saves = transport.list_files(game.name)
+        my_saves = [
+            f for f in all_saves
+            if f.endswith(".CivBeyondSwordSave") and f"_{prev_player.name}." in f
+        ]
+
+        if not my_saves:
+            return False, f"Brak save'a od {prev_player.name}"
+
+        # Get the latest (sorted by name = sorted by turn number)
+        my_saves.sort()
+        latest = my_saves[-1]
 
         save_dir = Path(self.config.save_path)
         save_dir.mkdir(parents=True, exist_ok=True)
         local_path = save_dir / latest
 
-        # Check for duplicate: if file already exists locally
         if local_path.exists():
-            return True, f"Save juz istnieje lokalnie: {latest} (uzyj Otworz folder)"
+            return True, f"Save juz istnieje: {latest}"
 
         success = transport.download(latest, local_path, game.name)
         if success:
@@ -155,12 +183,28 @@ class AppController(QObject):
             return False, "Blad pobierania"
 
     def download_save_list(self, game: Game) -> list[str]:
-        """Get list of available saves on remote for this game."""
+        """Get list of saves available for THIS player (sent by previous player)."""
         transport = self._create_transport_for_game(game)
         if not transport:
             return []
+
+        my_name = self.config.player_name
+        my_index = None
+        for i, p in enumerate(game.players):
+            if p.name == my_name:
+                my_index = i
+                break
+        if my_index is None:
+            return []
+
+        prev_index = (my_index - 1) % len(game.players)
+        prev_player = game.players[prev_index]
+
         files = transport.list_files(game.name)
-        return [f for f in files if f.endswith(".CivBeyondSwordSave")]
+        return [
+            f for f in files
+            if f.endswith(".CivBeyondSwordSave") and f"_{prev_player.name}." in f
+        ]
 
     def download_specific_save(self, game: Game, filename: str) -> tuple[bool, str]:
         """Download a specific save file by name."""
