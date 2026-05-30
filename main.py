@@ -13,16 +13,29 @@ Features:
 - Modern dark-themed PyQt5 GUI
 """
 import sys
+import os
 import logging
 from pathlib import Path
 
 from PyQt5.QtWidgets import QApplication, QMessageBox, QFileDialog
+from PyQt5.QtGui import QIcon
 
 from src.config import AppConfig
 from src.gui.main_window import MainWindow
 from src.gui.app_controller import AppController
 from src.gui.tray_icon import TrayIcon
 from src.gui.file_watcher import SaveFileWatcher
+
+
+def get_resource_path(relative_path: str) -> Path:
+    """Get absolute path to a resource, works for dev and PyInstaller .exe."""
+    if getattr(sys, 'frozen', False):
+        # Running as compiled .exe
+        base_path = Path(sys._MEIPASS)
+    else:
+        # Running from source
+        base_path = Path(__file__).parent
+    return base_path / relative_path
 
 
 def setup_logging():
@@ -50,9 +63,28 @@ def main():
     app.setApplicationVersion("1.0.0")
     app.setQuitOnLastWindowClosed(False)  # Keep running in tray
 
+    # Set application icon (taskbar + window title)
+    icon_path = get_resource_path("icon.ico")
+    if icon_path.exists():
+        app_icon = QIcon(str(icon_path))
+        app.setWindowIcon(app_icon)
+    else:
+        app_icon = QIcon()
+
+    # Windows-specific: set AppUserModelID so taskbar shows our icon
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "Civ4PBEMManager.1.0"
+            )
+        except Exception:
+            pass
+
     config = AppConfig()
     controller = AppController(config)
     window = MainWindow(config)
+    window.setWindowIcon(app_icon)
 
     # --- System Tray ---
     tray = TrayIcon(window)

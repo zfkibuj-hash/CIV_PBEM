@@ -540,7 +540,8 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("Ustawienia")
-        self.setMinimumSize(520, 420)
+        self.setMinimumSize(520, 480)
+        self.resize(540, 520)
         self.setStyleSheet(DARK_STYLE)
         self._init_ui()
 
@@ -601,8 +602,16 @@ class SettingsDialog(QDialog):
 
     # --- Tab 2: Transport ---
     def _create_transport_tab(self) -> QWidget:
+        from PyQt5.QtWidgets import QScrollArea
+
+        # Use a scroll area so email fields never overlap on small screens
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
+        layout.setSpacing(8)
 
         tc = self.config.transport_config
 
@@ -642,8 +651,9 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.file_transport_group)
 
         # Email transport settings (SMTP + IMAP)
-        self.email_transport_group = QGroupBox("Transport email (SMTP wysylka + IMAP odbiór)")
+        self.email_transport_group = QGroupBox("Transport email (SMTP + IMAP)")
         email_form = QFormLayout(self.email_transport_group)
+        email_form.setSpacing(6)
 
         ec = tc.get("email", {})
 
@@ -698,7 +708,8 @@ class SettingsDialog(QDialog):
         self._on_transport_type_changed(self.transport_type.currentText())
 
         layout.addStretch()
-        return tab
+        scroll.setWidget(tab)
+        return scroll
 
     # --- Tab 3: Notifications ---
     def _create_notifications_tab(self) -> QWidget:
