@@ -68,10 +68,56 @@ def _play_notification_sound():
         pass  # Sound is non-critical
 
 
+def _ensure_single_instance() -> bool:
+    """Ensure only one instance of the application is running.
+
+    On Windows: uses a named kernel mutex.
+    On Linux/Mac: uses a lock file with fcntl.
+
+    Returns True if this is the only instance, False if another is already running.
+    """
+    if sys.platform == "win32":
+        import ctypes
+        # CreateMutex returns handle; GetLastError()==183 means already exists
+        mutex = ctypes.windll.kernel32.CreateMutexW(None, True, "Civ4PBEMManager_SingleInstance")
+        if ctypes.windll.kernel32.GetLastError() == 183:
+            # Another instance holds the mutex
+            ctypes.windll.kernel32.CloseHandle(mutex)
+            return False
+        # Keep mutex alive for the lifetime of the process (stored globally)
+        _ensure_single_instance._mutex = mutex
+        return True
+    else:
+        # Unix: use a lock file
+        import fcntl
+        lock_path = Path.home() / ".config" / "Civ4PBEMManager" / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        # Keep the file handle open for the lifetime of the process
+        _ensure_single_instance._lock_file = open(lock_path, "w")
+        try:
+            fcntl.flock(_ensure_single_instance._lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except (IOError, OSError):
+            return False
+
+
 def main():
     setup_logging()
     logger = logging.getLogger(__name__)
     logger.info("Starting Civ4 PBEM Manager")
+
+    # --- Single instance check ---
+    if not _ensure_single_instance():
+        # Another instance is already running — show message and exit
+        app = QApplication(sys.argv)
+        QMessageBox.warning(
+            None,
+            "Civ4 PBEM Manager",
+            "Program jest juz uruchomiony!\n\n"
+            "Application is already running!\n\n"
+            "Sprawdz zasobnik systemowy (tray).",
+        )
+        sys.exit(0)
 
     app = QApplication(sys.argv)
     app.setApplicationName("Civ4 PBEM Manager")
