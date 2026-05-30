@@ -176,9 +176,6 @@ def main():
     controller.status_changed.connect(window.status_label.setText)
     controller.games_updated.connect(window._load_games)
 
-    # Auto-launch Civ4 when a save is downloaded
-    controller.save_downloaded.connect(controller.try_auto_launch_civ4)
-
     # Reload controller when settings are saved (transport/notifier may have changed)
     window.settings_saved.connect(controller.reload_config)
 

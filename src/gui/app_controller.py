@@ -17,7 +17,6 @@ from src.transport.sftp_transport import SFTPTransport
 from src.transport.webdav_transport import WebDAVTransport
 from src.transport.email_transport import EmailTransport
 from src.notifier.email_notifier import EmailNotifier
-from src.launcher import launch_civ4
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,6 @@ class AppController(QObject):
 
     status_changed = pyqtSignal(str)
     games_updated = pyqtSignal()
-    save_downloaded = pyqtSignal(str)  # Emits filepath of downloaded save (for auto-launch)
 
     def __init__(self, config: AppConfig):
         super().__init__()
@@ -180,7 +178,6 @@ class AppController(QObject):
 
         success = transport.download(latest, local_path, game.name)
         if success:
-            self.save_downloaded.emit(str(local_path))
             return True, f"Pobrano: {latest}"
         else:
             return False, "Blad pobierania"
@@ -221,7 +218,6 @@ class AppController(QObject):
 
         success = transport.download(filename, local_path, game.name)
         if success:
-            self.save_downloaded.emit(str(local_path))
             return True, f"Pobrano: {filename}"
         else:
             return False, f"Blad pobierania: {filename}"
@@ -401,25 +397,58 @@ class AppController(QObject):
             return False, "SMTP nie jest skonfigurowany"
         return self._notifier.test_connection()
 
-    def try_auto_launch_civ4(self, save_filepath: str = ""):
-        """Auto-launch Civ4 if enabled in config.
+    def get_latest_local_save(self, game: Game) -> Optional[Path]:
+        """Find the most recently downloaded save for a game in local save folder.
 
-        Called after a save is downloaded. Launches Civ4 BTS if:
-        - auto_launch is enabled in settings
-        - civ4_path is configured
-        - Civ4 is not already running
+        Looks for files matching the game's naming pattern and returns
+        the newest one (by modification time).
         """
-        if not self.config.auto_launch:
-            return
+        save_dir = Path(self.config.save_path)
+        if not save_dir.exists():
+            return None
+
+        # Match saves for this game: {GameName}_T*.CivBeyondSwordSave
+        pattern = f"{game.name}_T*.CivBeyondSwordSave"
+        saves = list(save_dir.glob(pattern))
+
+        if not saves:
+            return None
+
+        # Return most recently modified file
+        saves.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return saves[0]
+
+    def launch_civ4_with_save(self, game: Optional[Game] = None) -> tuple[bool, str]:
+        """Launch Civ4 BTS with the latest save for a game.
+
+        This is the manual "Launch Civ4" button action:
+        1. Checks if Civ4 is already running (prevents duplicate instances)
+        2. Finds the latest local save for the current game
+        3. Launches Civ4 with that save file
+
+        Args:
+            game: The current game (to find the right save). If None, launches without save.
+
+        Returns:
+            Tuple of (success, status_message_key_or_text)
+        """
+        from src.launcher import launch_civ4, is_civ4_running
 
         civ4_path = self.config.civ4_path
         if not civ4_path:
-            logger.info("Auto-launch enabled but civ4_path not set")
-            return
+            return False, "civ4_not_found"
 
-        success, msg = launch_civ4(civ4_path, save_file=save_filepath)
-        if success:
-            self.status_changed.emit(f"Civ4 uruchomiony")
-            logger.info(f"Auto-launched Civ4: {msg}")
-        else:
-            logger.warning(f"Auto-launch failed: {msg}")
+        # Prevent launching multiple instances
+        if is_civ4_running():
+            return True, "civ4_already_running"
+
+        # Find latest save for this game
+        save_file = None
+        if game:
+            latest = self.get_latest_local_save(game)
+            if latest:
+                save_file = str(latest)
+                logger.info(f"Launching Civ4 with save: {latest.name}")
+
+        success, msg = launch_civ4(civ4_path, save_file=save_file)
+        return success, msg

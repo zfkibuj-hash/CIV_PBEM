@@ -819,13 +819,40 @@ class MainWindow(QMainWindow):
         dialog.exec_()
 
     def _on_launch_civ4(self):
-        """Manually launch Civ4 BTS."""
+        """Launch Civ4 BTS with the latest save for the current game.
+
+        Actual launch is handled via launch_civ4_requested signal,
+        connected to controller in main.py. Fallback: direct launch here.
+        """
         civ4_path = self.config.civ4_path
         if not civ4_path:
             QMessageBox.warning(self, t("error"), t("civ4_not_found"))
             return
-        success, msg_key = launch_civ4(civ4_path)
-        self.status_label.setText(t(msg_key) if msg_key in ("civ4_launched", "civ4_already_running", "civ4_not_found") else msg_key)
+
+        # Check if already running (prevent duplicate instances)
+        if is_civ4_running():
+            self.status_label.setText(t("civ4_already_running"))
+            return
+
+        # Find the latest local save for the current game
+        save_file = None
+        if self.current_game:
+            save_dir = Path(self.config.save_path)
+            if save_dir.exists():
+                pattern = f"{self.current_game.name}_T*.CivBeyondSwordSave"
+                saves = list(save_dir.glob(pattern))
+                if saves:
+                    saves.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    save_file = str(saves[0])
+
+        success, msg_key = launch_civ4(civ4_path, save_file=save_file)
+        if success:
+            status = t(msg_key) if msg_key in ("civ4_launched", "civ4_already_running") else msg_key
+            if save_file:
+                status += f" ({Path(save_file).name})"
+            self.status_label.setText(status)
+        else:
+            self.status_label.setText(t(msg_key) if msg_key == "civ4_not_found" else msg_key)
 
     def _on_check_timer(self):
         """Periodic check for new saves."""
@@ -1049,13 +1076,9 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(appearance_group)
 
-        # Auto-launch Civ4
+        # Civ4 path (for Launch button)
         launch_group = QGroupBox("Civ4 Beyond the Sword")
         launch_form = QFormLayout(launch_group)
-
-        self.auto_launch_check = QCheckBox(t("auto_launch"))
-        self.auto_launch_check.setChecked(self.config.auto_launch)
-        launch_form.addRow(self.auto_launch_check)
 
         civ4_path_layout = QHBoxLayout()
         self.civ4_path_edit = QLineEdit(self.config.civ4_path)
@@ -1287,8 +1310,7 @@ class SettingsDialog(QDialog):
         self.config.language = new_lang
         set_language(new_lang)
 
-        # Auto-launch Civ4
-        self.config.auto_launch = self.auto_launch_check.isChecked()
+        # Civ4 path
         self.config.civ4_path = self.civ4_path_edit.text().strip()
 
         transport_data = {

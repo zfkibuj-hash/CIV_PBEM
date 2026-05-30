@@ -67,7 +67,6 @@ class AppConfig:
             "dark_mode": True,
             "auto_send": False,  # True = send save without popup (balloon only, for fullscreen play)
             "language": "pl",  # "pl" or "en"
-            "auto_launch": False,  # Auto-launch Civ4 after downloading a save
             "civ4_path": "",  # Path to Civ4BeyondSword.exe
             "transport": {
                 "type": "ftp",  # ftp, sftp, webdav
@@ -137,15 +136,6 @@ class AppConfig:
     @language.setter
     def language(self, value: str):
         self._data["language"] = value
-        self.save()
-
-    @property
-    def auto_launch(self) -> bool:
-        return self._data.get("auto_launch", False)
-
-    @auto_launch.setter
-    def auto_launch(self, value: bool):
-        self._data["auto_launch"] = value
         self.save()
 
     @property
