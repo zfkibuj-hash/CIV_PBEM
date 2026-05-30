@@ -70,9 +70,9 @@ CIV_PBEM/
 - No global transport on controller — each operation creates fresh transport for the specific game
 - **GameTransportDialog**: full transport editor per game with:
   - Same fields as global settings (ftp/sftp/webdav/email panels)
-  - **"Kopiuj ustawienia z..."** section at top:
-    - "Domyślne (globalne)" button — copies from app-wide Settings → Transport tab
-    - Dropdown of other games + "Kopiuj" button — copies from another game's config
+  - **"Kopiuj ustawienia z..."** section at top: copy from defaults or another game
+  - **"Testuj polaczenie"** button: creates temp transport from form, tests connect/disconnect
+  - Orange warning in email panel: "Nie uzywaj prywatnego maila!"
   - Uses QScrollArea, auto-shows/hides panels based on type
 - Button **"Transport gry..."** in sidebar opens this dialog for selected game
 
@@ -89,6 +89,11 @@ CIV_PBEM/
 #### 4. Delete Game
 - "Usun gre" button in sidebar (styled red)
 - Confirmation dialog
+- Then asks: "Czy usunac rowniez pliki save?"
+  - If yes AND game has `admin_password` set: requires password input to proceed
+  - If yes AND no admin_password: deletes directly
+  - Deletes files matching `{game_name}_T*.*` from save folder
+- `Game.admin_password`: set when creating game (optional field in NewGameDialog)
 - `AppController.delete_game(game)`: removes JSON file + remote state cache
 
 #### 5. Game Config Export/Import (.civ4pbem files)
@@ -152,29 +157,36 @@ CIV_PBEM/
 - **All dialogs** (Settings, NewGame, GameTransport) use `get_style_for_theme(config)` — not hardcoded
 
 ##### Main Window
-- Left sidebar (240px): game list, "+ Nowa gra", "Usun gre", "Transport gry...", "Ustawienia"
-- Right panel: header, status banner, player order, action buttons, clickable turn history list
+- Left sidebar (240px): game list, "+ Nowa gra", "Importuj gre...", "Eksportuj gre...", "Usun gre", "Transport gry...", "Ustawienia"
+- Right panel: header, status banner, player order + time since last turn, action buttons, clickable turn history list
 - Status bar at bottom
+- **Time since last turn**: shows "PlayerName gra juz: X dni, Y godz." below player order
 
 ##### Action Buttons
 - "Pobierz save" (green), "Wyslij moj save" (blue), "Otworz folder", "Sprawdz teraz"
 - "Sprawdz teraz": checks remote + resets periodic timer
 
 ##### Settings Dialog (3 tabs: Ogolne, Transport, Powiadomienia)
-- **Ogolne**: player name, email, save path, check interval, dark mode checkbox
-- **Transport**: global/default transport config (used as template for new games via "Kopiuj z domyslnych")
+- **Ogolne**: player name, email, save path, check interval, dark mode checkbox, **auto-send checkbox**
+  - Auto-send: "Auto-wyslij save (bez pytania, dla fullscreen)" — when ON, watchdog uploads automatically with balloon only (no popup that would minimize Civ4 in fullscreen)
+- **Transport**: global/default transport config (used as template for new games via "Kopiuj z domyslnych"). Orange warning: "Nie uzywaj prywatnego maila!"
 - **Powiadomienia**: SMTP for notifications. Placeholders: "puste = z transportu email"
 - After save: emits `settings_saved` signal → `controller.reload_config()`
 
 #### 10. System Tray
 - Context menu: "Pokaz okno", "Sprawdz teraz", "Zamknij"
-- Close (X) minimizes to tray + shows balloon. Double-click restores.
+- **X (close button) = quit application**. **Minimize (—) = goes to tray**.
+- Double-click restores window.
+- Balloon notifications + **system sound** (winsound.MessageBeep) on save download
 - `_minimize_to_tray` and `_tray_icon` initialized in `__init__`
+- `changeEvent` override: intercepts WindowMinimized state → hides window to tray
 - Icon path via `_get_icon_path()` handling `sys._MEIPASS`
 
 #### 11. File Watcher (Watchdog)
 - Monitors save folder for new `.CivBeyondSwordSave` files
-- Emits signal → tray balloon + optional upload dialog
+- Emits signal → behavior depends on `auto_send` setting:
+  - **auto_send=False** (default): shows popup dialog asking to upload (can minimize fullscreen game!)
+  - **auto_send=True**: uploads automatically, only balloon notification (safe for fullscreen play)
 - 5-second deduplication cooldown per file. Daemon thread.
 
 #### 12. Windows Integration
@@ -186,7 +198,7 @@ CIV_PBEM/
 
 #### 13. Config
 - `%APPDATA%/Civ4PBEMManager/config.json`
-- Keys: save_path, check_interval_minutes, dark_mode, player_name, player_email, transport (global/default), smtp
+- Keys: save_path, check_interval_minutes, dark_mode, auto_send, player_name, player_email, transport (global/default), smtp
 - `AppConfig` class with auto-save on change
 - Games dir: `%APPDATA%/Civ4PBEMManager/games/`
 
@@ -199,7 +211,11 @@ CIV_PBEM/
 - Settings save → `settings_saved` signal → `controller.reload_config()` — critical for first-time setup!
 - Revert notifies ALL players. Upload only notifies next player.
 - Download with duplicates: user chooses which save via dialog
-- `closeEvent` on MainWindow: minimize to tray (not quit). Flag initialized in `__init__`.
+- `closeEvent` on MainWindow: X = quit. `changeEvent` intercepts minimize → hides to tray.
+- Auto-send mode: when enabled, watchdog uploads without popup (balloon only) — safe for fullscreen Civ4
+- Notification sound: winsound.MessageBeep(MB_ICONASTERISK) on Windows after auto-download
+- Delete saves requires admin_password (if set on game) — prevents accidental deletion
+- Private email warning: orange label in both email transport panels
 - Dark/light theme applies to ALL dialogs (not just main window)
 - Exe optimized: exclude WebEngine/Multimedia/Quick/Qml/Svg/OpenGL + UPX
 
