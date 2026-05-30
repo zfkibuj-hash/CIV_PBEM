@@ -352,6 +352,15 @@ class MainWindow(QMainWindow):
         btn_new_game.clicked.connect(self._on_new_game)
         sidebar_layout.addWidget(btn_new_game)
 
+        self.btn_delete_game = QPushButton("Usun gre")
+        self.btn_delete_game.setStyleSheet("color: #ef5350;")
+        self.btn_delete_game.clicked.connect(self._on_delete_game)
+        sidebar_layout.addWidget(self.btn_delete_game)
+
+        self.btn_game_transport = QPushButton("Transport gry...")
+        self.btn_game_transport.clicked.connect(self._on_game_transport)
+        sidebar_layout.addWidget(self.btn_game_transport)
+
         btn_settings = QPushButton("Ustawienia")
         btn_settings.clicked.connect(self._on_settings)
         sidebar_layout.addWidget(btn_settings)
@@ -538,6 +547,38 @@ class MainWindow(QMainWindow):
                 game.save_to_file(get_games_dir())
                 self.games.append(game)
                 self._refresh_game_list()
+
+    def _on_delete_game(self):
+        """Delete the currently selected game."""
+        if not self.current_game:
+            QMessageBox.information(self, "Info", "Zaznacz gre do usuniecia.")
+            return
+
+        reply = QMessageBox.warning(
+            self,
+            "Usuwanie gry",
+            f"Czy na pewno chcesz usunac gre '{self.current_game.name}'?\n\n"
+            f"Ta operacja jest nieodwracalna!",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            # Will be connected to controller in main.py
+            self._delete_game_requested = True
+
+    def _on_game_transport(self):
+        """Open transport configuration dialog for the current game."""
+        if not self.current_game:
+            QMessageBox.information(self, "Info", "Zaznacz gre aby skonfigurowac transport.")
+            return
+
+        dialog = GameTransportDialog(self.config, self.current_game, self.games, self)
+        if dialog.exec_() == QDialog.Accepted:
+            tc = dialog.get_transport_config()
+            self.current_game.transport_config = tc
+            from src.config import get_games_dir
+            self.current_game.save_to_file(get_games_dir())
+            self.status_label.setText(f"Transport gry '{self.current_game.name}' zapisany.")
 
     settings_saved = pyqtSignal()
 
@@ -1083,3 +1124,239 @@ class SettingsDialog(QDialog):
             parent.apply_theme()
 
         self.accept()
+
+
+
+class GameTransportDialog(QDialog):
+    """Per-game transport configuration dialog.
+
+    Allows configuring transport for individual games with option to
+    copy settings from defaults (global config) or from another game.
+    """
+
+    def __init__(self, config: AppConfig, game: Game, all_games: list, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.game = game
+        self.all_games = all_games
+        self.setWindowTitle(f"Transport: {game.name}")
+        self.setMinimumSize(520, 480)
+        self.resize(540, 520)
+        self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
+        self._init_ui()
+
+    def _init_ui(self):
+        from PyQt5.QtWidgets import QScrollArea
+        layout = QVBoxLayout(self)
+
+        # Copy from section
+        copy_group = QGroupBox("Kopiuj ustawienia z...")
+        copy_layout = QHBoxLayout(copy_group)
+
+        btn_copy_defaults = QPushButton("Domyslne (globalne)")
+        btn_copy_defaults.clicked.connect(self._copy_from_defaults)
+        copy_layout.addWidget(btn_copy_defaults)
+
+        self.copy_game_combo = QComboBox()
+        self.copy_game_combo.addItem("-- wybierz gre --")
+        for g in self.all_games:
+            if g.name != self.game.name and g.transport_config:
+                self.copy_game_combo.addItem(g.name)
+        copy_layout.addWidget(self.copy_game_combo)
+
+        btn_copy_game = QPushButton("Kopiuj")
+        btn_copy_game.clicked.connect(self._copy_from_game)
+        copy_layout.addWidget(btn_copy_game)
+
+        layout.addWidget(copy_group)
+
+        # Transport config (scrollable)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        content = QWidget()
+        form_layout = QVBoxLayout(content)
+
+        tc = self.game.transport_config or {}
+
+        # Type
+        type_group = QGroupBox("Metoda transportu")
+        type_form = QFormLayout(type_group)
+        self.transport_type = QComboBox()
+        self.transport_type.addItems(["ftp", "sftp", "webdav", "email", "synology"])
+        self.transport_type.setCurrentText(tc.get("type", "ftp"))
+        self.transport_type.currentTextChanged.connect(self._on_type_changed)
+        type_form.addRow("Typ:", self.transport_type)
+
+        self.ssl_ignore_check = QCheckBox("Ignoruj bledy SSL")
+        self.ssl_ignore_check.setChecked(tc.get("ignore_ssl_errors", True))
+        type_form.addRow(self.ssl_ignore_check)
+        form_layout.addWidget(type_group)
+
+        # File-based (FTP/SFTP/WebDAV)
+        self.file_group = QGroupBox("Serwer (FTP/SFTP/WebDAV)")
+        file_form = QFormLayout(self.file_group)
+        self.t_host = QLineEdit(tc.get("host", ""))
+        file_form.addRow("Host:", self.t_host)
+        self.t_port = QSpinBox()
+        self.t_port.setRange(1, 65535)
+        self.t_port.setValue(tc.get("port", 21))
+        file_form.addRow("Port:", self.t_port)
+        self.t_user = QLineEdit(tc.get("username", ""))
+        file_form.addRow("Login:", self.t_user)
+        self.t_pass = QLineEdit(tc.get("password", ""))
+        self.t_pass.setEchoMode(QLineEdit.Password)
+        file_form.addRow("Haslo:", self.t_pass)
+        self.t_dir = QLineEdit(tc.get("remote_dir", "/civ4pbem"))
+        file_form.addRow("Folder:", self.t_dir)
+        form_layout.addWidget(self.file_group)
+
+        # Email
+        self.email_group = QGroupBox("Email (SMTP + IMAP)")
+        email_form = QFormLayout(self.email_group)
+        ec = tc.get("email", {})
+        self.e_mode = QComboBox()
+        self.e_mode.addItems(["shared", "individual"])
+        self.e_mode.setCurrentText(ec.get("mode", "shared"))
+        email_form.addRow("Tryb:", self.e_mode)
+        self.e_shared = QLineEdit(ec.get("shared_email", ""))
+        email_form.addRow("Skrzynka:", self.e_shared)
+        self.e_smtp_host = QLineEdit(ec.get("smtp_host", ""))
+        email_form.addRow("SMTP host:", self.e_smtp_host)
+        self.e_smtp_port = QSpinBox()
+        self.e_smtp_port.setRange(1, 65535)
+        self.e_smtp_port.setValue(ec.get("smtp_port", 587))
+        email_form.addRow("SMTP port:", self.e_smtp_port)
+        self.e_smtp_user = QLineEdit(ec.get("smtp_user", ""))
+        email_form.addRow("SMTP login:", self.e_smtp_user)
+        self.e_smtp_pass = QLineEdit(ec.get("smtp_password", ""))
+        self.e_smtp_pass.setEchoMode(QLineEdit.Password)
+        email_form.addRow("SMTP haslo:", self.e_smtp_pass)
+        self.e_imap_host = QLineEdit(ec.get("imap_host", ""))
+        email_form.addRow("IMAP host:", self.e_imap_host)
+        self.e_imap_port = QSpinBox()
+        self.e_imap_port.setRange(1, 65535)
+        self.e_imap_port.setValue(ec.get("imap_port", 993))
+        email_form.addRow("IMAP port:", self.e_imap_port)
+        self.e_imap_user = QLineEdit(ec.get("imap_user", ""))
+        email_form.addRow("IMAP login:", self.e_imap_user)
+        self.e_imap_pass = QLineEdit(ec.get("imap_password", ""))
+        self.e_imap_pass.setEchoMode(QLineEdit.Password)
+        email_form.addRow("IMAP haslo:", self.e_imap_pass)
+        self.e_from = QLineEdit(ec.get("from_address", ""))
+        email_form.addRow("Od:", self.e_from)
+        form_layout.addWidget(self.email_group)
+
+        # Synology
+        self.syno_group = QGroupBox("Synology Sharing")
+        syno_form = QFormLayout(self.syno_group)
+        sc = tc.get("synology", {})
+        self.s_upload_url = QLineEdit(sc.get("upload_url", ""))
+        syno_form.addRow("URL uploadu:", self.s_upload_url)
+        self.s_upload_pass = QLineEdit(sc.get("upload_password", ""))
+        self.s_upload_pass.setEchoMode(QLineEdit.Password)
+        syno_form.addRow("Haslo uploadu:", self.s_upload_pass)
+        self.s_download_url = QLineEdit(sc.get("download_url", ""))
+        syno_form.addRow("URL pobierania:", self.s_download_url)
+        self.s_download_pass = QLineEdit(sc.get("download_password", ""))
+        self.s_download_pass.setEchoMode(QLineEdit.Password)
+        self.s_download_pass.setPlaceholderText("puste = jak uploadu")
+        syno_form.addRow("Haslo pobierania:", self.s_download_pass)
+        form_layout.addWidget(self.syno_group)
+
+        form_layout.addStretch()
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+
+        # Show/hide panels
+        self._on_type_changed(self.transport_type.currentText())
+
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _on_type_changed(self, t: str):
+        self.file_group.setVisible(t in ("ftp", "sftp", "webdav"))
+        self.email_group.setVisible(t == "email")
+        self.syno_group.setVisible(t == "synology")
+
+    def _copy_from_defaults(self):
+        """Copy transport config from global defaults."""
+        tc = self.config.transport_config
+        self._apply_config(tc)
+        self.status = "Skopiowano z domyslnych"
+
+    def _copy_from_game(self):
+        """Copy transport config from another game."""
+        game_name = self.copy_game_combo.currentText()
+        if game_name == "-- wybierz gre --":
+            return
+        for g in self.all_games:
+            if g.name == game_name and g.transport_config:
+                self._apply_config(g.transport_config)
+                break
+
+    def _apply_config(self, tc: dict):
+        """Apply a transport config dict to the form fields."""
+        self.transport_type.setCurrentText(tc.get("type", "ftp"))
+        self.ssl_ignore_check.setChecked(tc.get("ignore_ssl_errors", True))
+        self.t_host.setText(tc.get("host", ""))
+        self.t_port.setValue(tc.get("port", 21))
+        self.t_user.setText(tc.get("username", ""))
+        self.t_pass.setText(tc.get("password", ""))
+        self.t_dir.setText(tc.get("remote_dir", "/civ4pbem"))
+
+        ec = tc.get("email", {})
+        self.e_mode.setCurrentText(ec.get("mode", "shared"))
+        self.e_shared.setText(ec.get("shared_email", ""))
+        self.e_smtp_host.setText(ec.get("smtp_host", ""))
+        self.e_smtp_port.setValue(ec.get("smtp_port", 587))
+        self.e_smtp_user.setText(ec.get("smtp_user", ""))
+        self.e_smtp_pass.setText(ec.get("smtp_password", ""))
+        self.e_imap_host.setText(ec.get("imap_host", ""))
+        self.e_imap_port.setValue(ec.get("imap_port", 993))
+        self.e_imap_user.setText(ec.get("imap_user", ""))
+        self.e_imap_pass.setText(ec.get("imap_password", ""))
+        self.e_from.setText(ec.get("from_address", ""))
+
+        sc = tc.get("synology", {})
+        self.s_upload_url.setText(sc.get("upload_url", ""))
+        self.s_upload_pass.setText(sc.get("upload_password", ""))
+        self.s_download_url.setText(sc.get("download_url", ""))
+        self.s_download_pass.setText(sc.get("download_password", ""))
+
+    def get_transport_config(self) -> dict:
+        """Build transport config dict from form fields."""
+        return {
+            "type": self.transport_type.currentText(),
+            "ignore_ssl_errors": self.ssl_ignore_check.isChecked(),
+            "host": self.t_host.text().strip(),
+            "port": self.t_port.value(),
+            "username": self.t_user.text().strip(),
+            "password": self.t_pass.text(),
+            "remote_dir": self.t_dir.text().strip(),
+            "email": {
+                "mode": self.e_mode.currentText(),
+                "shared_email": self.e_shared.text().strip(),
+                "smtp_host": self.e_smtp_host.text().strip(),
+                "smtp_port": self.e_smtp_port.value(),
+                "smtp_user": self.e_smtp_user.text().strip(),
+                "smtp_password": self.e_smtp_pass.text(),
+                "smtp_use_tls": True,
+                "imap_host": self.e_imap_host.text().strip(),
+                "imap_port": self.e_imap_port.value(),
+                "imap_user": self.e_imap_user.text().strip(),
+                "imap_password": self.e_imap_pass.text(),
+                "imap_use_ssl": True,
+                "from_address": self.e_from.text().strip(),
+            },
+            "synology": {
+                "upload_url": self.s_upload_url.text().strip(),
+                "upload_password": self.s_upload_pass.text(),
+                "download_url": self.s_download_url.text().strip(),
+                "download_password": self.s_download_pass.text(),
+            },
+        }

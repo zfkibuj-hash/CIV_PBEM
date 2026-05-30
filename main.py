@@ -154,22 +154,68 @@ def main():
     # --- Wire up window actions to controller ---
     def handle_download():
         if window.current_game:
-            success, msg = controller.download_save(window.current_game)
-            window.status_label.setText(msg)
-            if success:
-                window._update_game_view()
+            game = window.current_game
+
+            # Get list of available saves to let user choose if duplicates
+            saves = controller.download_save_list(game)
+            if not saves:
+                # Try simple download
+                success, msg = controller.download_save(game)
+                window.status_label.setText(msg)
+                if success:
+                    window._update_game_view()
+                return
+
+            if len(saves) == 1:
+                # Only one save — download it
+                success, msg = controller.download_specific_save(game, saves[0])
+                window.status_label.setText(msg)
+                if success:
+                    window._update_game_view()
+            else:
+                # Multiple saves — let user choose
+                from PyQt5.QtWidgets import QInputDialog
+                chosen, ok = QInputDialog.getItem(
+                    window,
+                    "Wybierz save do pobrania",
+                    f"Dostepne save'y dla '{game.name}':\n"
+                    f"(najnowszy na dole)",
+                    saves,
+                    len(saves) - 1,  # default: last (newest)
+                    False,
+                )
+                if ok and chosen:
+                    success, msg = controller.download_specific_save(game, chosen)
+                    window.status_label.setText(msg)
+                    if success:
+                        window._update_game_view()
 
     def handle_upload():
         if window.current_game:
+            game = window.current_game
+            my_name = config.player_name
+
+            # Confirmation if it's not your turn (advisory)
+            if not game.is_my_turn(my_name) and game.history:
+                reply = QMessageBox.question(
+                    window,
+                    "Nie Twoja kolej",
+                    f"Wedlug stanu gry, teraz gra: {game.current_player.name if game.current_player else '?'}\n\n"
+                    f"Czy na pewno chcesz wyslac save?\n"
+                    f"(np. powtorzenie tury po przywroceniu)",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if reply != QMessageBox.Yes:
+                    return
+
             save_path = Path(config.save_path)
             filepath, _ = QFileDialog.getOpenFileName(
                 window, "Wybierz save do wyslania", str(save_path),
                 "Civ4 Saves (*.CivBeyondSwordSave);;All Files (*)"
             )
             if filepath:
-                success, msg = controller.upload_save(
-                    window.current_game, Path(filepath)
-                )
+                success, msg = controller.upload_save(game, Path(filepath))
                 window.status_label.setText(msg)
                 if success:
                     window._load_games()
@@ -253,6 +299,30 @@ def main():
                 window._update_game_view()
 
     window.btn_revert.clicked.connect(handle_revert)
+
+    # Connect delete game button
+    window.btn_delete_game.clicked.disconnect()
+
+    def handle_delete_game():
+        if not window.current_game:
+            return
+        game = window.current_game
+        reply = QMessageBox.warning(
+            window,
+            "Usuwanie gry",
+            f"Czy na pewno chcesz usunac gre '{game.name}'?\n\n"
+            f"Ta operacja jest nieodwracalna!",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            success, msg = controller.delete_game(game)
+            window.status_label.setText(msg)
+            if success:
+                window.current_game = None
+                window._load_games()
+
+    window.btn_delete_game.clicked.connect(handle_delete_game)
 
     # --- Cleanup on exit ---
     def on_quit():

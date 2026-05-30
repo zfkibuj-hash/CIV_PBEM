@@ -1,5 +1,6 @@
 """
 Application controller - connects GUI with transport, notifier, and game logic.
+Transport is now PER-GAME (each game has its own transport config).
 """
 import logging
 from pathlib import Path
@@ -22,7 +23,11 @@ logger = logging.getLogger(__name__)
 
 
 class AppController(QObject):
-    """Orchestrates the app logic between GUI, transport, and notifications."""
+    """Orchestrates the app logic between GUI, transport, and notifications.
+
+    Transport is created per-game from game.transport_config.
+    Notifier uses global SMTP config (with credential fallback).
+    """
 
     status_changed = pyqtSignal(str)
     games_updated = pyqtSignal()
@@ -30,30 +35,24 @@ class AppController(QObject):
     def __init__(self, config: AppConfig):
         super().__init__()
         self.config = config
-        self._transport: Optional[BaseTransport] = None
         self._notifier: Optional[EmailNotifier] = None
-        self._init_transport()
         self._init_notifier()
 
-    def _init_transport(self):
-        """Initialize transport based on config."""
-        tc = self.config.transport_config
-        transport_type = tc.get("type", "ftp")
-        host = tc.get("host", "")
-        port = tc.get("port", 21)
-        username = tc.get("username", "")
-        password = tc.get("password", "")
-        remote_dir = tc.get("remote_dir", "/civ4pbem")
+    def _create_transport_for_game(self, game: Game) -> Optional[BaseTransport]:
+        """Create a transport instance from a game's transport_config."""
+        tc = game.transport_config
+        if not tc:
+            return None
+
+        transport_type = tc.get("type", "")
         ignore_ssl = tc.get("ignore_ssl_errors", True)
 
         if transport_type == "email":
-            # Email transport uses SMTP/IMAP config
             ec = tc.get("email", {})
             smtp_host = ec.get("smtp_host", "")
             if not smtp_host:
-                self._transport = None
-                return
-            self._transport = EmailTransport(
+                return None
+            return EmailTransport(
                 smtp_host=smtp_host,
                 smtp_port=ec.get("smtp_port", 587),
                 smtp_user=ec.get("smtp_user", ""),
@@ -68,69 +67,68 @@ class AppController(QObject):
                 shared_email=ec.get("shared_email", ""),
                 from_address=ec.get("from_address", ""),
             )
-            return
 
         if transport_type == "synology":
             sc = tc.get("synology", {})
             upload_url = sc.get("upload_url", "")
             if not upload_url:
-                self._transport = None
-                return
-            # Fallback: if download_password is empty, use upload_password
+                return None
             upload_pw = sc.get("upload_password", "")
             download_pw = sc.get("download_password", "") or upload_pw
-            self._transport = SynologySharingTransport(
+            return SynologySharingTransport(
                 upload_url=upload_url,
                 download_url=sc.get("download_url", ""),
                 upload_password=upload_pw,
                 download_password=download_pw,
                 ignore_ssl=ignore_ssl,
             )
-            return
+
+        host = tc.get("host", "")
+        port = tc.get("port", 21)
+        username = tc.get("username", "")
+        password = tc.get("password", "")
+        remote_dir = tc.get("remote_dir", "/civ4pbem")
 
         if not host:
-            self._transport = None
-            return
+            return None
 
         if transport_type == "ftp":
-            self._transport = FTPTransport(
+            return FTPTransport(
                 host=host, port=port, username=username,
                 password=password, remote_dir=remote_dir,
                 ignore_ssl=ignore_ssl,
             )
         elif transport_type == "sftp":
-            self._transport = SFTPTransport(
+            return SFTPTransport(
                 host=host, port=port, username=username,
-                password=password, remote_dir=remote_dir
+                password=password, remote_dir=remote_dir,
             )
         elif transport_type == "webdav":
-            self._transport = WebDAVTransport(
+            return WebDAVTransport(
                 host=host, port=port, username=username,
                 password=password, remote_dir=remote_dir,
                 ignore_ssl=ignore_ssl,
             )
 
+        return None
+
     def _init_notifier(self):
         """Initialize email notifier.
 
         Fallback (login/password ONLY): if empty in notification config,
-        reuse SMTP credentials from email transport config.
-        Host and port are NEVER inherited - must be set explicitly.
+        reuse SMTP credentials from global transport email config.
+        Host and port are NEVER inherited.
         """
         sc = self.config.smtp_config
         tc = self.config.transport_config
         ec = tc.get("email", {})
 
-        # Host must be explicitly set - no fallback
         smtp_host = sc.get("host", "")
         if not smtp_host:
             self._notifier = None
             return
 
-        # Port - no fallback, use what's configured
         smtp_port = sc.get("port", 587)
-
-        # Login/password fallback: if empty, try email transport SMTP creds
         smtp_user = sc.get("username", "") or ec.get("smtp_user", "")
         smtp_pass = sc.get("password", "") or ec.get("smtp_password", "")
         from_addr = sc.get("from_address", "") or smtp_user
@@ -145,16 +143,16 @@ class AppController(QObject):
         )
 
     def reload_config(self):
-        """Reload transport and notifier after settings change."""
-        self._init_transport()
+        """Reload notifier after settings change."""
         self._init_notifier()
 
     def download_save(self, game: Game) -> tuple[bool, str]:
         """Download the latest save for a game. Returns (success, message)."""
-        if not self._transport:
-            return False, "Transport nie jest skonfigurowany"
+        transport = self._create_transport_for_game(game)
+        if not transport:
+            return False, "Transport nie jest skonfigurowany dla tej gry"
 
-        latest = self._transport.get_latest_save(game.name)
+        latest = transport.get_latest_save(game.name)
         if not latest:
             return False, "Brak save'a do pobrania"
 
@@ -162,34 +160,60 @@ class AppController(QObject):
         save_dir.mkdir(parents=True, exist_ok=True)
         local_path = save_dir / latest
 
-        success = self._transport.download(latest, local_path, game.name)
+        # Check for duplicate: if file already exists locally
+        if local_path.exists():
+            return True, f"Save juz istnieje lokalnie: {latest} (uzyj Otworz folder)"
+
+        success = transport.download(latest, local_path, game.name)
         if success:
             return True, f"Pobrano: {latest}"
         else:
             return False, "Blad pobierania"
 
+    def download_save_list(self, game: Game) -> list[str]:
+        """Get list of available saves on remote for this game."""
+        transport = self._create_transport_for_game(game)
+        if not transport:
+            return []
+        files = transport.list_files(game.name)
+        return [f for f in files if f.endswith(".CivBeyondSwordSave")]
+
+    def download_specific_save(self, game: Game, filename: str) -> tuple[bool, str]:
+        """Download a specific save file by name."""
+        transport = self._create_transport_for_game(game)
+        if not transport:
+            return False, "Transport nie jest skonfigurowany dla tej gry"
+
+        save_dir = Path(self.config.save_path)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        local_path = save_dir / filename
+
+        success = transport.download(filename, local_path, game.name)
+        if success:
+            return True, f"Pobrano: {filename}"
+        else:
+            return False, f"Blad pobierania: {filename}"
+
     def upload_save(self, game: Game, local_path: Path) -> tuple[bool, str]:
         """Upload a save file and advance the turn."""
-        if not self._transport:
-            return False, "Transport nie jest skonfigurowany"
+        transport = self._create_transport_for_game(game)
+        if not transport:
+            return False, "Transport nie jest skonfigurowany dla tej gry"
 
         my_name = self.config.player_name
-        # Note: we no longer block upload based on turn order.
-        # The user decides when to send. Turn tracking is advisory.
-
         remote_filename = game.get_save_filename(my_name)
 
         # For email transport in individual mode, pass the next player's email
         next_player = game.next_player
-        if isinstance(self._transport, EmailTransport) and self._transport.mode == "individual":
+        if isinstance(transport, EmailTransport) and transport.mode == "individual":
             if next_player:
-                success = self._transport.upload(
+                success = transport.upload(
                     local_path, remote_filename, game.name, to_email=next_player.email
                 )
             else:
                 return False, "Brak nastepnego gracza"
         else:
-            success = self._transport.upload(local_path, remote_filename, game.name)
+            success = transport.upload(local_path, remote_filename, game.name)
 
         if success:
             # Remember who's next before advancing
@@ -201,7 +225,7 @@ class AppController(QObject):
 
             # Also upload game state so other instances can sync
             game_state_path = get_games_dir() / f"{game.name}.json"
-            self._transport.upload(game_state_path, f"{game.name}_state.json", game.name)
+            transport.upload(game_state_path, f"{game.name}_state.json", game.name)
 
             # Send notification
             if self._notifier and next_player:
@@ -220,38 +244,39 @@ class AppController(QObject):
 
     def check_for_new_saves(self, games: list[Game]) -> list[str]:
         """Check all games for new saves. Returns list of notifications."""
-        if not self._transport:
-            return []
-
         my_name = self.config.player_name
         notifications = []
 
         for game in games:
+            transport = self._create_transport_for_game(game)
+            if not transport:
+                continue
+
             if game.is_my_turn(my_name):
-                # Check if there's actually a save waiting
-                latest = self._transport.get_latest_save(game.name)
+                latest = transport.get_latest_save(game.name)
                 if latest:
                     notifications.append(
                         f"Gra '{game.name}': TWOJA KOLEJ! (Tura {game.current_turn})"
                     )
 
             # Try to sync game state from remote
-            self._sync_game_state(game)
+            self._sync_game_state(game, transport)
 
         return notifications
 
-    def _sync_game_state(self, game: Game):
+    def _sync_game_state(self, game: Game, transport: Optional[BaseTransport] = None):
         """Download game state from remote to keep in sync with other players."""
-        if not self._transport:
+        if not transport:
+            transport = self._create_transport_for_game(game)
+        if not transport:
             return
 
         state_filename = f"{game.name}_state.json"
-        if self._transport.file_exists(state_filename, game.name):
+        if transport.file_exists(state_filename, game.name):
             local_state = get_games_dir() / f"{game.name}_remote.json"
-            if self._transport.download(state_filename, local_state, game.name):
+            if transport.download(state_filename, local_state, game.name):
                 try:
                     remote_game = Game.load_from_file(local_state)
-                    # Update local game if remote is ahead
                     if (remote_game.current_turn > game.current_turn or
                         (remote_game.current_turn == game.current_turn and
                          remote_game.current_player_index > game.current_player_index)):
@@ -264,22 +289,21 @@ class AppController(QObject):
                     logger.error(f"Failed to sync game state: {e}")
 
     def revert_turn(self, game: Game, history_index: int) -> tuple[bool, str]:
-        """Revert a game to a specific turn and notify all players.
-
-        Downloads the save from that turn (if available) and notifies everyone.
-        """
+        """Revert a game to a specific turn and notify all players."""
         if history_index < 0 or history_index >= len(game.history):
             return False, "Nieprawidlowy indeks tury"
 
         target_turn = game.history[history_index]
         my_name = self.config.player_name
 
-        # Try to download the save from that turn (so user can re-play it)
-        if self._transport and target_turn.filename:
+        transport = self._create_transport_for_game(game)
+
+        # Try to download the save from that turn
+        if transport and target_turn.filename:
             save_dir = Path(self.config.save_path)
             save_dir.mkdir(parents=True, exist_ok=True)
             local_path = save_dir / target_turn.filename
-            self._transport.download(target_turn.filename, local_path, game.name)
+            transport.download(target_turn.filename, local_path, game.name)
 
         # Revert game state
         reverted = game.revert_to_turn(history_index)
@@ -290,15 +314,15 @@ class AppController(QObject):
         game.save_to_file(get_games_dir())
 
         # Upload reverted state so other players sync
-        if self._transport:
+        if transport:
             game_state_path = get_games_dir() / f"{game.name}.json"
-            self._transport.upload(game_state_path, f"{game.name}_state.json", game.name)
+            transport.upload(game_state_path, f"{game.name}_state.json", game.name)
 
         # Notify ALL players about the revert
         if self._notifier:
             for player in game.players:
                 if player.name == my_name:
-                    continue  # Don't notify yourself
+                    continue
                 self._notifier._send_email(
                     to_email=player.email,
                     subject=f"[Civ4 PBEM] {game.name} - TURA PRZYWROCONA!",
@@ -314,13 +338,28 @@ class AppController(QObject):
         self.games_updated.emit()
         return True, f"Przywrocono do tury {reverted.turn_number} ({reverted.player_name})"
 
-    def test_transport(self) -> tuple[bool, str]:
-        """Test transport connection."""
-        if not self._transport:
-            return False, "Transport nie jest skonfigurowany"
-        success = self._transport.connect()
+    def delete_game(self, game: Game) -> tuple[bool, str]:
+        """Delete a game and its state file."""
+        try:
+            game.delete_file(get_games_dir())
+            # Also remove remote state file if possible
+            remote_state = get_games_dir() / f"{game.name}_remote.json"
+            if remote_state.exists():
+                remote_state.unlink()
+            self.games_updated.emit()
+            return True, f"Gra '{game.name}' usunieta"
+        except Exception as e:
+            logger.error(f"Failed to delete game: {e}")
+            return False, f"Blad usuwania: {e}"
+
+    def test_transport_for_game(self, game: Game) -> tuple[bool, str]:
+        """Test transport connection for a specific game."""
+        transport = self._create_transport_for_game(game)
+        if not transport:
+            return False, "Transport nie jest skonfigurowany dla tej gry"
+        success = transport.connect()
         if success:
-            self._transport.disconnect()
+            transport.disconnect()
             return True, "Polaczenie OK!"
         return False, "Nie mozna polaczyc"
 
