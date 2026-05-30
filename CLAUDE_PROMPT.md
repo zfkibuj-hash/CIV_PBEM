@@ -29,12 +29,16 @@ CIV_PBEM/
 ├── generate_icon.py                 # Generates icon.ico using Pillow (envelope + floppy disk)
 ├── icon.ico                         # App icon (multi-resolution: 16,24,32,48,64,128,256)
 ├── README.md
+├── MANUAL.md                        # Full user manual (PL/EN)
 └── src/
     ├── __init__.py
     ├── config.py                    # AppConfig class, JSON-based, stored in %APPDATA%/Civ4PBEMManager/
+    ├── i18n.py                      # Internationalization module (PL/EN, ~200 keys, runtime switching)
+    ├── launcher.py                  # Civ4 BTS detection (Steam/GOG/registry) + launch with save
     ├── models/
     │   ├── __init__.py
-    │   └── game.py                  # Game, Player, Turn dataclasses + revert_to_turn() + delete_file()
+    │   ├── game.py                  # Game, Player, Turn dataclasses + revert_to_turn() + delete_file()
+    │   └── statistics.py            # GameStats, PlayerStats — calculated from turn history
     ├── transport/
     │   ├── __init__.py
     │   ├── base.py                  # BaseTransport ABC
@@ -47,8 +51,8 @@ CIV_PBEM/
     │   └── email_notifier.py        # SMTP notifications (separate from transport)
     └── gui/
         ├── __init__.py
-        ├── main_window.py           # MainWindow + SettingsDialog + NewGameDialog + GameTransportDialog
-        ├── app_controller.py        # AppController (per-game transport, notifier)
+        ├── main_window.py           # MainWindow + SettingsDialog + NewGameDialog + GameTransportDialog + GameStatsDialog
+        ├── app_controller.py        # AppController (per-game transport, notifier, launch_civ4_with_save)
         ├── tray_icon.py             # QSystemTrayIcon with balloon notifications
         └── file_watcher.py          # Watchdog-based save folder monitor
 ```
@@ -198,7 +202,7 @@ CIV_PBEM/
 
 #### 13. Config
 - `%APPDATA%/Civ4PBEMManager/config.json`
-- Keys: save_path, check_interval_minutes, dark_mode, auto_send, player_name, player_email, transport (global/default), smtp
+- Keys: save_path, check_interval_minutes, dark_mode, auto_send, player_name, player_email, transport (global/default), smtp, **language** ("pl"/"en"), **civ4_path** (path to .exe)
 - `AppConfig` class with auto-save on change
 - Games dir: `%APPDATA%/Civ4PBEMManager/games/`
 
@@ -218,6 +222,61 @@ CIV_PBEM/
 - Private email warning: orange label in both email transport panels
 - Dark/light theme applies to ALL dialogs (not just main window)
 - Exe optimized: exclude WebEngine/Multimedia/Quick/Qml/Svg/OpenGL + UPX
+- Single-instance: only one copy of the app can run at a time
+- "Uruchom Civ4" button: manual launch, loads latest save, prevents duplicate Civ4 instances
+- Language stored in config, i18n.t() used for all UI strings
+
+### NEW FEATURES (v1.1)
+
+#### 14. Game Statistics (`src/models/statistics.py` + `GameStatsDialog`)
+- **"Statystyki" button** in sidebar → opens `GameStatsDialog`
+- `calculate_game_stats(game)` → `GameStats` dataclass with:
+  - `total_turns`, `total_time_seconds`, `avg_turn_time_seconds`
+  - `fastest_turn_seconds` + `fastest_turn_player`
+  - `slowest_turn_seconds` + `slowest_turn_player`
+  - `game_started`, `last_activity` (timestamps)
+  - `player_stats`: list of `PlayerStats` per player
+- `PlayerStats`: `name`, `total_turns`, `total_time_seconds`, `fastest_turn_seconds`, `slowest_turn_seconds`
+- Turn duration = difference between consecutive history timestamps
+- First turn duration = timestamp - game.created_at
+- Dialog shows overview group (QFormLayout) + QTableWidget for per-player stats
+- `format_duration(seconds)` helper → "5d 3h" / "2h 15m" / "42m" / "< 1m"
+
+#### 15. Launch Civ4 (`src/launcher.py`)
+- **"Uruchom Civ4" button** (orange) in action buttons row
+- Button behavior (NOT auto-launch, only manual click):
+  1. Checks `config.civ4_path` — if empty, shows error
+  2. `is_civ4_running()` — if True, shows "already running" (prevents duplicate instances!)
+  3. `get_latest_local_save(game)` — finds newest `{GameName}_T*.CivBeyondSwordSave` by mtime
+  4. `launch_civ4(exe_path, save_file)` — launches with save as CLI argument
+- **Detection**: `detect_civ4_path()` checks:
+  - Common Steam paths (C/D/E drives)
+  - GOG paths
+  - Standard Firaxis install paths
+  - Windows Registry: `HKLM\SOFTWARE\WOW6432Node\Valve\Steam` → InstallPath
+  - Windows Registry: `HKLM\SOFTWARE\WOW6432Node\Firaxis Games\...` → INSTALLDIR
+- **Settings UI**: "Sciezka do Civ4 BTS" field + "Przegladaj..." + "Wykryj automatycznie" buttons
+- **Important**: NO auto-launch on download. Only manual button. Player decides when to launch.
+
+#### 16. Multi-Language / i18n (`src/i18n.py`)
+- Supported: `"pl"` (Polish, default), `"en"` (English)
+- `_TRANSLATIONS` dict: key → {"pl": "...", "en": "..."}. ~200 keys covering full UI.
+- `I18n` singleton class with `.t(key, **kwargs)` method
+- Module-level shortcut: `from src.i18n import t` → `t("your_turn")`, `t("waiting_for", name="Bob")`
+- `set_language(lang)` — changes global language at runtime
+- **Settings**: language combo (Polski/English) in Ogolne tab
+- **Startup**: `main.py` calls `set_language(config.language)` before creating window
+- Format strings supported: `t("playing_since", name="Alice", time="2h 15m")`
+- Missing key returns `"[key_name]"` for debugging
+
+#### 17. Single-Instance Guard (`main.py`)
+- `_ensure_single_instance()` called at very start of `main()`
+- **Windows**: `CreateMutexW("Civ4PBEMManager_SingleInstance")` — kernel named mutex
+  - GetLastError() == 183 → another instance exists
+  - Mutex handle stored in function attribute (prevents GC)
+- **Linux/Mac**: `fcntl.flock(LOCK_EX | LOCK_NB)` on `~/.config/Civ4PBEMManager/.lock`
+- If duplicate detected: shows bilingual QMessageBox warning and calls `sys.exit(0)`
+- Message: "Program jest juz uruchomiony! / Application is already running! / Sprawdz zasobnik systemowy (tray)."
 
 ### Output Requirements
 Generate ALL files listed in the project structure. The result should be:
