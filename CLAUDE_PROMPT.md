@@ -109,15 +109,18 @@ CIV_PBEM/
 
 #### 5. Game Config Export/Import (.civ4pbem files)
 - **Export**: "Eksportuj gre..." button in sidebar → saves `.civ4pbem` file (JSON) containing:
-  - `civ4pbem_version`: "1.0"
+  - `civ4pbem_version`: "1.1"
   - `name`: game name
   - `players`: list of players with name, email, order
   - `transport_config`: full transport settings for this game
+  - `game_speed`: quick/normal/epic/marathon
+  - `smtp`: SMTP notification config (so all players get working notifications on import)
 - **Import**: "Importuj gre..." button in sidebar → opens `.civ4pbem` file, creates game locally
   - Checks for duplicate game name (offers to overwrite)
   - **Player identity dialog**: asks "Which player are you?" from list + confirms email (see section 19)
+  - **Auto-imports SMTP** if user hasn't configured their own (notifications work without manual setup)
   - Player who sets up the game exports the file and sends it (email, Discord, etc.) to all players
-  - Each player imports, picks their identity, and has identical game config + transport ready to go
+  - Each player imports, picks their identity, and has identical game config + transport + notifications ready to go
 
 #### 5. Upload Confirmation (Turn Order Advisory)
 - Upload does NOT block based on turn order — user decides when to send
@@ -208,16 +211,17 @@ CIV_PBEM/
 
 #### 11. File Watcher (Watchdog)
 - Monitors save folder for new `.CivBeyondSwordSave` files
+- **Smart game matching**: matches filename prefix to game name (e.g. `Wojna5_BC-3955_to_Alexander...` → game "Wojna5")
+- **Skips our own files**: regex `_T\d{4}_` in filename = our pattern (downloaded/uploaded by app) → ignored
+- **Only fires on Civ4 native saves**: files Civ4 itself creates after playing a turn
 - Emits signal → behavior depends on `auto_send` setting:
   - **auto_send=False** (default): shows popup dialog asking to upload (can minimize fullscreen game!)
   - **auto_send=True**: uploads automatically, only balloon notification (safe for fullscreen play)
 - 5-second deduplication cooldown per file. Daemon thread.
 - **Ignore list** (`ignore_next(filepath)`): files downloaded BY THE APP are excluded from detection
   - Controller calls `watcher.ignore_next(path)` BEFORE writing a downloaded save
-  - Prevents the "just downloaded turn → watchdog asks to re-upload" loop
   - Entries auto-expire after 30 seconds (safety against stale entries)
   - Path normalization (resolve()) ensures consistent matching
-  - Only fires for saves that CIV4 itself creates (player finished turn)
 
 #### 12. Windows Integration
 - `SetCurrentProcessExplicitAppUserModelID` for taskbar icon
