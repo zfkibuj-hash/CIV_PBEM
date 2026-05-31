@@ -645,10 +645,12 @@ class MainWindow(QMainWindow):
 
         game = self.current_game
         export_data = {
-            "civ4pbem_version": "1.0",
+            "civ4pbem_version": "1.1",
             "name": game.name,
             "players": [p.to_dict() for p in game.players],
             "transport_config": game.transport_config,
+            "game_speed": game.game_speed,
+            "smtp": self.config.smtp_config,  # Include SMTP so all players get notifications
         }
 
         import json
@@ -699,12 +701,23 @@ class MainWindow(QMainWindow):
 
             players = [Player.from_dict(p) for p in data.get("players", [])]
             transport_config = data.get("transport_config", {})
+            game_speed = data.get("game_speed", "normal")
 
             game = Game(
                 name=name,
                 players=players,
                 transport_config=transport_config,
+                game_speed=game_speed,
             )
+
+            # Import SMTP config if included (shared notification setup)
+            imported_smtp = data.get("smtp")
+            if imported_smtp and isinstance(imported_smtp, dict):
+                # Set SMTP config so notifications work without manual setup
+                current_smtp = self.config.smtp_config
+                if not current_smtp.get("host"):
+                    # Only overwrite if user hasn't configured their own SMTP
+                    self.config.set("smtp", imported_smtp)
 
             # --- Player identity selection ---
             # User must confirm which player from the list they are

@@ -215,51 +215,68 @@ def main():
     watcher = SaveFileWatcher(config.save_path, parent=window)
 
     def on_new_save_detected(filepath: str):
-        """Handle a new save file detected by watchdog."""
+        """Handle a new save file detected by watchdog.
+
+        Smart matching:
+        - Matches filename to game by prefix (e.g. 'Wojna5_...' → game 'Wojna5')
+        - Skips our own pattern files (_T0000_ format = downloaded from server)
+        - Only fires on Civ4 native saves (what the game itself creates)
+        - Auto-uploads with our naming pattern + sends notification
+        """
+        import re
         filename = Path(filepath).name
         logger.info(f"Watchdog detected new save: {filename}")
 
-        # Show tray notification
-        if tray.is_available:
-            tray.notify_new_save_detected(filename)
+        # Skip our own pattern files (downloaded/uploaded by this app)
+        # Our pattern: {GameName}_T{4digits}_{PlayerName}.CivBeyondSwordSave
+        if re.search(r'_T\d{4}_', filename):
+            logger.debug(f"Skipping our-pattern file: {filename}")
+            return
 
-        # Update status bar
-        window.status_label.setText(f"Nowy save wykryty: {filename}")
+        # Match to a game by name prefix
+        # Civ4 native: {GameName}_{TurnDate}_to_{Leader}.CivBeyondSwordSave
+        matched_game = None
+        for game in window.games:
+            if filename.startswith(f"{game.name}_"):
+                matched_game = game
+                break
 
-        # If we have a current game and it's our turn, offer to upload
-        if window.current_game and window.current_game.is_my_turn(config.player_name):
-            auto_send = config.get("auto_send", False)
+        if not matched_game:
+            logger.info(f"No matching game for save: {filename}")
+            if tray.is_available:
+                tray.notify_new_save_detected(filename)
+            window.status_label.setText(t("new_save_detected", filename=filename))
+            return
 
-            if auto_send:
-                # Auto-send mode: upload without popup (for fullscreen play)
-                success, msg = controller.upload_save(
-                    window.current_game, Path(filepath)
-                )
+        logger.info(f"Matched save to game '{matched_game.name}', uploading...")
+
+        auto_send = config.get("auto_send", False)
+
+        if auto_send:
+            # Auto-send: upload without popup (safe for fullscreen)
+            success, msg = controller.upload_save(matched_game, Path(filepath))
+            window.status_label.setText(msg)
+            if success and tray.is_available:
+                tray.notify_status(t("auto_sent"), msg)
+                _play_notification_sound()
+        else:
+            # Manual mode: popup asking to confirm upload
+            if not window.isVisible():
+                window.show()
+                window.activateWindow()
+
+            reply = QMessageBox.question(
+                window,
+                t("new_save_dialog_title"),
+                t("new_save_dialog_text", filename=filename, game=matched_game.name),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if reply == QMessageBox.Yes:
+                success, msg = controller.upload_save(matched_game, Path(filepath))
                 window.status_label.setText(msg)
                 if success and tray.is_available:
-                    tray.notify_status("Auto-wyslano!", msg)
-                    _play_notification_sound()
-            else:
-                # Manual mode: show popup dialog
-                if not window.isVisible():
-                    window.show()
-                    window.activateWindow()
-
-                reply = QMessageBox.question(
-                    window,
-                    "Nowy save wykryty!",
-                    f"Wykryto nowy plik save:\n{filename}\n\n"
-                    f"Czy chcesz go wyslac do gry '{window.current_game.name}'?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.Yes,
-                )
-                if reply == QMessageBox.Yes:
-                    success, msg = controller.upload_save(
-                        window.current_game, Path(filepath)
-                    )
-                    window.status_label.setText(msg)
-                    if success and tray.is_available:
-                        tray.notify_status("Wyslano!", msg)
+                    tray.notify_status(t("uploaded", filename=filename), msg)
 
     watcher.new_save_detected.connect(on_new_save_detected)
     watcher.start()
