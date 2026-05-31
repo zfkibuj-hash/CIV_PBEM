@@ -137,6 +137,10 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Ustawienia",
         "en": "Settings",
     },
+    "settings_appearance": {
+        "pl": "Wyglad i jezyk",
+        "en": "Appearance & language",
+    },
     "tab_general": {
         "pl": "Ogolne",
         "en": "General",
@@ -148,6 +152,10 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "tab_notifications": {
         "pl": "Powiadomienia",
         "en": "Notifications",
+    },
+    "tab_security": {
+        "pl": "Bezpieczenstwo",
+        "en": "Security",
     },
     "player_name": {
         "pl": "Twoja nazwa:",
