@@ -130,12 +130,17 @@ class AppController(QObject):
         """Reload notifier after settings change."""
         self._init_notifier()
 
-    def download_save(self, game: Game) -> tuple[bool, str]:
+    def download_save(self, game: Game, watcher=None) -> tuple[bool, str]:
         """Download the latest save meant for this player.
 
         Logic: a save named _SenderName means it was sent BY that player.
         This player should download saves sent by the PREVIOUS player in turn order.
         Uses alias mapping to resolve local nick → game player name.
+
+        Args:
+            game: The game to download for
+            watcher: Optional SaveFileWatcher — if provided, calls ignore_next()
+                     before writing the file (prevents re-upload loop)
         """
         transport = self._create_transport_for_game(game)
         if not transport:
@@ -177,6 +182,10 @@ class AppController(QObject):
 
         if local_path.exists():
             return True, f"Save juz istnieje: {latest}"
+
+        # Tell watcher to ignore this file (we're downloading it, not playing a turn)
+        if watcher:
+            watcher.ignore_next(str(local_path))
 
         success = transport.download(latest, local_path, game.name)
         if success:

@@ -272,6 +272,13 @@ def main():
     window.settings_saved.connect(controller.reload_config)
 
     # --- Wire up window actions to controller ---
+
+    def _ignore_save_in_watcher(filename: str):
+        """Tell watcher to ignore a file we're about to download."""
+        save_dir = Path(config.save_path)
+        local_path = save_dir / filename
+        watcher.ignore_next(str(local_path))
+
     def handle_download():
         if window.current_game:
             game = window.current_game
@@ -279,15 +286,16 @@ def main():
             # Get list of available saves to let user choose if duplicates
             saves = controller.download_save_list(game)
             if not saves:
-                # Try simple download
-                success, msg = controller.download_save(game)
+                # Tell watcher to ignore whatever we download
+                # (we don't know exact filename yet, controller handles it)
+                success, msg = controller.download_save(game, watcher=watcher)
                 window.status_label.setText(msg)
                 if success:
                     window._update_game_view()
                 return
 
             if len(saves) == 1:
-                # Only one save — download it
+                _ignore_save_in_watcher(saves[0])
                 success, msg = controller.download_specific_save(game, saves[0])
                 window.status_label.setText(msg)
                 if success:
@@ -305,6 +313,7 @@ def main():
                     False,
                 )
                 if ok and chosen:
+                    _ignore_save_in_watcher(chosen)
                     success, msg = controller.download_specific_save(game, chosen)
                     window.status_label.setText(msg)
                     if success:
@@ -357,7 +366,7 @@ def main():
         downloaded = []
         for game in window.games:
             if game.is_my_turn(my_name):
-                success, msg = controller.download_save(game)
+                success, msg = controller.download_save(game, watcher=watcher)
                 if success:
                     downloaded.append(f"{game.name}: {msg}")
 
