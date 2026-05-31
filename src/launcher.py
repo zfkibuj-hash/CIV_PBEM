@@ -37,6 +37,48 @@ _CIV4_PROCESS_NAMES = [
 ]
 
 
+# Common save folder locations for Civ4 BTS
+_COMMON_SAVE_PATHS = [
+    # Standard "My Documents" location (default Civ4 save path)
+    str(Path.home() / "Documents" / "My Games" / "Beyond the Sword" / "Saves" / "pbem"),
+    str(Path.home() / "Documents" / "My Games" / "Beyond the Sword" / "Saves" / "multi"),
+    str(Path.home() / "Documents" / "My Games" / "Beyond the Sword" / "Saves" / "hotseat"),
+    str(Path.home() / "Documents" / "My Games" / "Beyond the Sword" / "Saves"),
+    # OneDrive-synced Documents
+    str(Path.home() / "OneDrive" / "Documents" / "My Games" / "Beyond the Sword" / "Saves" / "pbem"),
+    str(Path.home() / "OneDrive" / "Documents" / "My Games" / "Beyond the Sword" / "Saves"),
+    # Non-English Windows (Dokumenty)
+    str(Path.home() / "Dokumenty" / "My Games" / "Beyond the Sword" / "Saves" / "pbem"),
+    str(Path.home() / "Dokumenty" / "My Games" / "Beyond the Sword" / "Saves"),
+]
+
+
+def detect_save_path() -> Optional[str]:
+    """Auto-detect Civ4 BTS save folder.
+
+    Checks common locations where Civ4 stores PBEM/multiplayer saves.
+    Returns the first existing path found, preferring 'pbem' subfolder.
+    """
+    for path_str in _COMMON_SAVE_PATHS:
+        path = Path(path_str)
+        if path.exists():
+            logger.info(f"Auto-detected save path: {path}")
+            return str(path)
+
+    # Fallback: search for any "Beyond the Sword/Saves" under home
+    home = Path.home()
+    for docs_name in ["Documents", "Dokumenty", "Mes documents"]:
+        saves_dir = home / docs_name / "My Games" / "Beyond the Sword" / "Saves"
+        if saves_dir.exists():
+            # Prefer pbem subfolder if it exists
+            pbem = saves_dir / "pbem"
+            if pbem.exists():
+                return str(pbem)
+            return str(saves_dir)
+
+    return None
+
+
 def detect_civ4_path() -> Optional[str]:
     """Auto-detect Civ4 Beyond the Sword executable path.
 

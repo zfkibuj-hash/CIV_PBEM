@@ -523,6 +523,14 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Nie wykryto Civ4 automatycznie. Wskazz reczne.",
         "en": "Civ4 not auto-detected. Please set manually.",
     },
+    "save_path_detected": {
+        "pl": "Wykryto folder save: {path}",
+        "en": "Save folder detected: {path}",
+    },
+    "save_path_not_detected": {
+        "pl": "Nie wykryto folderu save automatycznie. Wskazz reczne.",
+        "en": "Save folder not auto-detected. Please set manually.",
+    },
 
     # --- Import/Export ---
     "export_title": {

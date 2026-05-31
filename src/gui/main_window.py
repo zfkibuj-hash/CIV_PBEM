@@ -20,7 +20,7 @@ from src.config import AppConfig
 from src.models.game import Game, Player
 from src.i18n import t, get_i18n, set_language, LANGUAGES
 from src.models.statistics import calculate_game_stats, format_duration
-from src.launcher import detect_civ4_path, launch_civ4, is_civ4_running
+from src.launcher import detect_civ4_path, detect_save_path, launch_civ4, is_civ4_running
 
 logger = logging.getLogger(__name__)
 
@@ -1153,6 +1153,9 @@ class SettingsDialog(QDialog):
         btn_browse = QPushButton(t("browse"))
         btn_browse.clicked.connect(self._browse_path)
         path_layout.addWidget(btn_browse)
+        btn_detect_saves = QPushButton(t("detect_civ4"))
+        btn_detect_saves.clicked.connect(self._detect_save_path)
+        path_layout.addWidget(btn_detect_saves)
         layout.addWidget(path_group)
 
         # Check interval
@@ -1525,6 +1528,16 @@ class SettingsDialog(QDialog):
         )
         if path:
             self.path_edit.setText(path)
+
+    def _detect_save_path(self):
+        """Auto-detect Civ4 BTS save folder by checking common locations."""
+        from src.launcher import detect_save_path
+        detected = detect_save_path()
+        if detected:
+            self.path_edit.setText(detected)
+            QMessageBox.information(self, "OK", t("save_path_detected", path=detected))
+        else:
+            QMessageBox.information(self, t("info"), t("save_path_not_detected"))
 
     def _browse_civ4_path(self):
         """Browse for Civ4 BTS executable."""
