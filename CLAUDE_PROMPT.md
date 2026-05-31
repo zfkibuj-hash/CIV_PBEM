@@ -61,12 +61,19 @@ CIV_PBEM/
 ### Core Features
 
 #### 1. Multi-Game Support
-- `Game` dataclass: name, players, current_turn, current_player_index, history, **transport_config**, **local_player_alias**
+- `Game` dataclass: name, players, current_turn, current_player_index, history, **transport_config**, **local_player_alias**, **local_leader_name**
 - `Player` dataclass: name, email, order
 - `Turn` dataclass: turn_number, player_name, timestamp, filename
 - Games stored as individual JSON files in `%APPDATA%/Civ4PBEMManager/games/`
-- Save filename convention: `{GameName}_T{turn:04d}_{SenderPlayerName}.CivBeyondSwordSave`
-- The sender name is the **game player name** (resolved via alias, NOT necessarily the local nick)
+- **Save filename support** — TWO patterns:
+  - Civ4 native: `{GameName}_{TurnDate}_to_{NextLeaderName}.CivBeyondSwordSave` (e.g. `Mihau's_Game_BC-4000_to_Zara_Yaqob.CivBeyondSwordSave`)
+  - App custom (legacy): `{GameName}_T{turn:04d}_{SenderPlayerName}.CivBeyondSwordSave`
+- **Upload**: sends file with ORIGINAL filename (as Civ4 saved it, no renaming)
+- **Download matching** (priority order):
+  1. Civ4 native: looks for `_to_{local_leader_name}` in filename
+  2. App custom: looks for `_{prev_player_name}.` in filename
+  3. Fallback: newest `.CivBeyondSwordSave` on server
+- `Game.local_leader_name`: player's Civ4 leader name (e.g. "Zara_Yaqob"), set during import
 - `Game.local_player_alias`: maps local config.player_name → game player name (see section 19)
 - `Game.delete_file(directory)` removes the JSON from disk
 
