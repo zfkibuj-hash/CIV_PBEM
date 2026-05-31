@@ -148,12 +148,22 @@ CIV_PBEM/
 - Subject: `[CIV4PBEM] {GameName} | {filename}`. IMAP filters by tag + game name
 
 #### 8. Email Notifications (separate from transport)
-- `EmailNotifier` sends "Twoja kolej!" to next player after upload
+- `EmailNotifier` sends "Your turn!" to next player after upload
 - Configurable independently from transport
+- **Shared mailbox model**: if notification SMTP host is empty, automatically uses transport email SMTP credentials (one email account does everything)
+- **Customizable templates** (`subject_template`, `body_template` in smtp config):
+  - Variables: `{game}`, `{turn}`, `{from_player}`, `{to_player}`
+  - Default: English template if not customized
+  - Stored in config under `smtp.subject_template` and `smtp.body_template`
 - **Credential fallback** (login/password ONLY, never host/port):
   - If notification login empty → uses email transport SMTP login
   - If password empty → uses email transport SMTP password
-  - Host and port: NEVER inherited, must be set explicitly
+  - Host and port: fallback to transport email SMTP if notification host empty
+- **Purge game emails** (`EmailTransport.purge_game(game_name)`):
+  - Deletes ALL emails matching `[CIV4PBEM] {game_name}` from mailbox via IMAP
+  - Uses IMAP search + `\Deleted` flag + `expunge()`
+  - Only affects the specific game — other games on same mailbox are safe
+  - `AppController.purge_game_emails(game)` → wrapper that checks transport type
 
 #### 9. GUI (PyQt5)
 
