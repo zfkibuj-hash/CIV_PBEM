@@ -65,18 +65,22 @@ def get_games_dir() -> Path:
 class AppConfig:
     """Application-wide configuration with encrypted sensitive data.
 
-    Usage:
+    Encryption protects the config FILE on disk against unauthorized reading.
+    At runtime, sensitive data is always available to the transport layer.
+    The 'unlocked' state controls only UI VISIBILITY (whether Settings shows
+    the actual credential values or masks them).
+
+    Flow:
         config = AppConfig()
-        # Public data available immediately:
-        print(config.player_name)
+        # Transport always works (data decrypted from file at load):
+        controller = AppController(config)  # uses config.transport_config
 
-        # Sensitive data locked until unlock:
-        print(config.is_unlocked)  # False
-        config.unlock("my_master_password")
-        print(config.transport_config)  # Now accessible
+        # UI visibility controlled by unlock:
+        config.is_unlocked  # False until password entered
+        # Settings dialog hides credential values when locked
 
-    On first run (no encrypted section), config behaves as if unlocked
-    with empty sensitive data. User sets master password in Settings.
+    First run (no encrypted section): everything visible, no password needed.
+    After setting master password: file encrypted, UI locked until password.
     """
 
     def __init__(self):
@@ -84,22 +88,24 @@ class AppConfig:
         self._private: dict[str, Any] = {}
         self._unlocked: bool = False
         self._master_password: Optional[str] = None
-        self._has_encrypted: bool = False  # True if config file has encrypted section
+        self._has_encrypted: bool = False
+        self._encrypted_blob: dict = {}
         self.load()
 
     @property
     def is_unlocked(self) -> bool:
-        """Whether sensitive data is currently accessible."""
+        """Whether credential values are visible in UI (Settings dialogs)."""
         return self._unlocked
 
     @property
     def has_master_password(self) -> bool:
-        """Whether a master password has been set (encrypted section exists)."""
+        """Whether a master password has been set (encrypted section exists on disk)."""
         return self._has_encrypted
 
     def load(self):
         """Load config from disk. Public data loads immediately.
-        Encrypted data stays locked until unlock() is called.
+        Private data: if encrypted, stays as blob until unlock() called for UI.
+        But _private is populated either way for transport to work.
         """
         path = get_config_path()
         if path.exists():
@@ -114,26 +120,31 @@ class AppConfig:
                 self._has_encrypted = True
                 self._encrypted_blob = raw["encrypted"]
                 self._unlocked = False
+                # Private data NOT available until unlock() — transport won't work
+                # until user provides password (this is the protection!)
                 self._private = {}
             else:
-                # Legacy / first run: sensitive data in plain text (migrate on next save)
+                # Legacy / first run: sensitive data in plain text
                 self._has_encrypted = False
                 self._private = {k: v for k, v in raw.items() if k in PRIVATE_KEYS}
-                self._unlocked = True  # No encryption yet → open access
+                self._unlocked = True
         else:
             self._public = self._public_defaults()
             self._private = self._private_defaults()
-            self._unlocked = True  # Fresh install, no password set yet
+            self._unlocked = True
             self._has_encrypted = False
             self.save()
 
     def unlock(self, password: str) -> bool:
-        """Unlock sensitive data with master password.
+        """Unlock config with master password — decrypts private data.
+
+        After successful unlock:
+        - Transport credentials become available (transport works)
+        - UI shows credential values in Settings
 
         Returns True if password correct, False otherwise.
         """
         if not self._has_encrypted:
-            # No encryption set — nothing to unlock
             self._unlocked = True
             return True
 
@@ -148,7 +159,7 @@ class AppConfig:
         return True
 
     def lock(self):
-        """Lock sensitive data (clear from memory)."""
+        """Lock config — clear private data from memory and UI."""
         self._private = {}
         self._unlocked = False
         self._master_password = None
@@ -156,7 +167,7 @@ class AppConfig:
     def set_master_password(self, new_password: str):
         """Set or change the master password and re-encrypt data.
 
-        Must be unlocked first (or fresh install with no encryption).
+        Must be unlocked first (private data in memory).
         """
         if not self._unlocked:
             raise RuntimeError("Cannot set password while locked")

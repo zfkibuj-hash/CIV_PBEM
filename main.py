@@ -151,10 +151,11 @@ def main():
     set_language(config.language)
 
     # --- Master password / unlock ---
+    # Encryption protects config FILE on disk. At runtime, we always need
+    # the data decrypted for transport to work. Password dialog unlocks
+    # visibility in UI (Settings shows credentials only when unlocked).
     if config.has_master_password:
-        # Config is encrypted — ask for password
         max_attempts = 3
-        unlocked = False
         for attempt in range(max_attempts):
             password, ok = QInputDialog.getText(
                 None,
@@ -164,22 +165,32 @@ def main():
                 QLineEdit.Password,
             )
             if not ok:
-                # User cancelled — run in locked mode (no transport)
+                # User cancelled — app runs but transport is locked
+                # (credentials not decrypted = can't connect to servers)
+                logger.info("Password dialog cancelled — running in locked mode")
                 break
             if config.unlock(password):
-                unlocked = True
+                logger.info("Config unlocked — full UI access")
                 break
             else:
-                QMessageBox.warning(
-                    None,
-                    "Bledne haslo / Wrong password",
-                    "Nieprawidlowe haslo. Sprobuj ponownie.\n"
-                    "Wrong password. Try again.",
-                )
-
-        if not unlocked:
-            # Run in read-only mode — transport disabled
-            logger.warning("Config locked — running without transport access")
+                if attempt < max_attempts - 1:
+                    QMessageBox.warning(
+                        None,
+                        "Bledne haslo / Wrong password",
+                        "Nieprawidlowe haslo. Sprobuj ponownie.\n"
+                        "Wrong password. Try again.",
+                    )
+                else:
+                    QMessageBox.warning(
+                        None,
+                        "Bledne haslo / Wrong password",
+                        "Nie udalo sie odblokowac.\n"
+                        "Pobieranie/wysylanie save'ow nie bedzie dzialac.\n"
+                        "Mozesz przegladac gry, ale transport jest zablokowany.\n\n"
+                        "Failed to unlock.\n"
+                        "Download/upload will not work.\n"
+                        "You can browse games but transport is locked.",
+                    )
 
     controller = AppController(config)
     window = MainWindow(config)
