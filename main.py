@@ -125,7 +125,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Civ4 PBEM Manager")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion("3.0.0")
     app.setQuitOnLastWindowClosed(True)  # X button quits; minimize goes to tray
 
     # Set application icon (taskbar + window title)
@@ -525,6 +525,7 @@ def main():
         window.status_label.setText(msg)
         if success:
             window.current_game = None
+            window._clear_game_view()
             window._load_games()
 
     window.btn_delete_game.clicked.connect(handle_delete_game)

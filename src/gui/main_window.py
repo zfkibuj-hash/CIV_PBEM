@@ -317,7 +317,7 @@ class MainWindow(QMainWindow):
         self._minimize_to_tray = False  # Set to True by main.py when tray is available
         self._tray_icon = None  # Reference to TrayIcon, set by main.py
 
-        self.setWindowTitle("Civ4 PBEM Manager v1.0")
+        self.setWindowTitle("Civ4 PBEM Manager v3.0")
         self.setMinimumSize(800, 600)
         self.apply_theme()
         self._restore_geometry()
@@ -406,6 +406,10 @@ class MainWindow(QMainWindow):
         self.btn_game_transport = QPushButton(t("game_transport"))
         self.btn_game_transport.clicked.connect(self._on_game_transport)
         sidebar_layout.addWidget(self.btn_game_transport)
+
+        self.btn_edit_game = QPushButton(t("edit_game"))
+        self.btn_edit_game.clicked.connect(self._on_edit_game)
+        sidebar_layout.addWidget(self.btn_edit_game)
 
         self.btn_stats = QPushButton(t("statistics"))
         self.btn_stats.clicked.connect(self._on_statistics)
@@ -678,6 +682,16 @@ class MainWindow(QMainWindow):
         """Refresh history list when player filter changes."""
         self._populate_history_list()
 
+    def _clear_game_view(self):
+        """Clear the right panel when no game is selected (e.g. after delete)."""
+        self.header_label.setText(t("select_game"))
+        self.status_banner.setText("")
+        self.status_banner.setObjectName("banner_waiting")
+        self.players_label.setText("")
+        self.history_list.clear()
+        self.history_filter_combo.clear()
+        self.history_filter_combo.addItem(t("history_filter_all"), "")
+
     def _on_launch_turn(self):
         """Launch Civ4 with the save file from the selected history entry."""
         if not self.current_game:
@@ -907,6 +921,20 @@ class MainWindow(QMainWindow):
             from src.config import get_games_dir
             self.current_game.save_to_file(get_games_dir())
             self.status_label.setText(t("transport_saved", name=self.current_game.name))
+
+    def _on_edit_game(self):
+        """Open game edit dialog for changing player emails, speed, alias."""
+        if not self.current_game:
+            QMessageBox.information(self, t("info"), t("select_game_to_export"))
+            return
+
+        dialog = EditGameDialog(self.config, self.current_game, self)
+        if dialog.exec_() == QDialog.Accepted:
+            from src.config import get_games_dir
+            self.current_game.save_to_file(get_games_dir())
+            self._update_game_view()
+            self._refresh_game_list()
+            self.status_label.setText(t("game_saved", name=self.current_game.name))
 
     settings_saved = pyqtSignal()
 
@@ -2059,3 +2087,94 @@ class GameStatsDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+
+
+class EditGameDialog(QDialog):
+    """Dialog for editing an existing game's settings (players, emails, speed, alias)."""
+
+    def __init__(self, config: AppConfig, game: Game, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.game = game
+        self.setWindowTitle(t("edit_game_title", name=game.name))
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setMinimumSize(500, 400)
+        self.resize(540, 450)
+        self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+
+        # Game speed
+        speed_group = QGroupBox(t("game_speed"))
+        speed_form = QFormLayout(speed_group)
+        self.speed_combo = QComboBox()
+        self.speed_combo.addItem("Quick (330)", "quick")
+        self.speed_combo.addItem("Normal (500)", "normal")
+        self.speed_combo.addItem("Epic (750)", "epic")
+        self.speed_combo.addItem("Marathon (1500)", "marathon")
+        idx = self.speed_combo.findData(self.game.game_speed)
+        if idx >= 0:
+            self.speed_combo.setCurrentIndex(idx)
+        speed_form.addRow(t("game_speed"), self.speed_combo)
+        layout.addWidget(speed_group)
+
+        # Player alias
+        alias_group = QGroupBox(t("edit_alias"))
+        alias_form = QFormLayout(alias_group)
+        self.alias_combo = QComboBox()
+        self.alias_combo.addItem(f"({t('history_filter_all')} — no alias)", "")
+        for p in self.game.players:
+            self.alias_combo.addItem(p.name, p.name)
+        current_alias = self.game.local_player_alias
+        if current_alias:
+            idx = self.alias_combo.findData(current_alias)
+            if idx >= 0:
+                self.alias_combo.setCurrentIndex(idx)
+        alias_form.addRow(t("edit_alias_label"), self.alias_combo)
+        layout.addWidget(alias_group)
+
+        # Players — editable emails
+        players_group = QGroupBox(t("edit_players"))
+        players_layout = QVBoxLayout(players_group)
+
+        self._email_edits = []
+        for p in self.game.players:
+            row = QHBoxLayout()
+            name_label = QLabel(f"{p.name}:")
+            name_label.setMinimumWidth(100)
+            row.addWidget(name_label)
+            email_edit = QLineEdit(p.email)
+            email_edit.setPlaceholderText("email@example.com")
+            row.addWidget(email_edit)
+            self._email_edits.append((p, email_edit))
+            players_layout.addLayout(row)
+
+        layout.addWidget(players_group)
+
+        layout.addStretch()
+
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _save(self):
+        """Apply changes to the game object."""
+        # Update speed
+        self.game.game_speed = self.speed_combo.currentData()
+
+        # Update alias
+        alias = self.alias_combo.currentData()
+        self.game.local_player_alias = alias or ""
+
+        # Update player emails
+        for player, email_edit in self._email_edits:
+            new_email = email_edit.text().strip()
+            if new_email:
+                player.email = new_email
+
+        self.accept()

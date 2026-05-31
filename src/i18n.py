@@ -39,6 +39,30 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Transport gry...",
         "en": "Game transport...",
     },
+    "edit_game": {
+        "pl": "Edytuj gre...",
+        "en": "Edit game...",
+    },
+    "edit_game_title": {
+        "pl": "Edycja gry: {name}",
+        "en": "Edit game: {name}",
+    },
+    "edit_alias": {
+        "pl": "Tozsamosc w grze",
+        "en": "Game identity",
+    },
+    "edit_alias_label": {
+        "pl": "Jestem graczem:",
+        "en": "I am player:",
+    },
+    "edit_players": {
+        "pl": "Emaile graczy",
+        "en": "Player emails",
+    },
+    "game_saved": {
+        "pl": "Zapisano zmiany gry '{name}'",
+        "en": "Game '{name}' changes saved",
+    },
     "settings": {
         "pl": "Ustawienia",
         "en": "Settings",
