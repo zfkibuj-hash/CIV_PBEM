@@ -274,6 +274,7 @@ CIV_PBEM/
 #### 16. Multi-Language / i18n (`src/i18n.py`)
 - Supported: `"pl"` (Polish, default), `"en"` (English)
 - `_TRANSLATIONS` dict: key → {"pl": "...", "en": "..."}. ~200 keys covering full UI.
+- ALL UI strings use `t()` — no hardcoded Polish/English anywhere in main_window.py
 - `I18n` singleton class with `.t(key, **kwargs)` method
 - Module-level shortcut: `from src.i18n import t` → `t("your_turn")`, `t("waiting_for", name="Bob")`
 - `set_language(lang)` — changes global language at runtime
