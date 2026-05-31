@@ -50,6 +50,9 @@ class Game:
     created_at: float = field(default_factory=time.time)
     transport_config: dict = field(default_factory=dict)
     admin_password: str = ""  # Password required to delete save files
+    # Local player alias: maps local config.player_name → game player name
+    # e.g. local nick "kiroman" maps to game player "K4arol"
+    local_player_alias: str = ""
 
     @property
     def current_player(self) -> Optional[Player]:
@@ -104,14 +107,40 @@ class Game:
         return target_turn
 
     def get_save_filename(self, player_name: str) -> str:
-        """Generate expected save filename pattern."""
-        return f"{self.name}_T{self.current_turn:04d}_{player_name}.CivBeyondSwordSave"
+        """Generate expected save filename pattern.
+        Uses the GAME player name (alias), not the local nick.
+        """
+        game_name = self.get_game_player_name(player_name)
+        return f"{self.name}_T{self.current_turn:04d}_{game_name}.CivBeyondSwordSave"
 
     def is_my_turn(self, my_name: str) -> bool:
-        """Check if it's the given player's turn."""
+        """Check if it's the given player's turn.
+        Supports alias: if local_player_alias is set, uses that for matching.
+        """
         if self.current_player is None:
             return False
-        return self.current_player.name == my_name
+        game_name = self.get_game_player_name(my_name)
+        return self.current_player.name == game_name
+
+    def get_game_player_name(self, local_name: str) -> str:
+        """Resolve local player name to game player name via alias.
+
+        If local_player_alias is set and local_name matches the local nick,
+        returns the alias (game player name). Otherwise returns local_name as-is.
+        """
+        if self.local_player_alias:
+            # Check if local_name is the local nick (it always is when called from controller)
+            # The alias IS the game player name
+            return self.local_player_alias
+        return local_name
+
+    def get_my_player(self, local_name: str) -> Optional[Player]:
+        """Get the Player object for the local user, resolving alias."""
+        game_name = self.get_game_player_name(local_name)
+        for p in self.players:
+            if p.name == game_name:
+                return p
+        return None
 
     def to_dict(self) -> dict:
         return {
@@ -123,6 +152,7 @@ class Game:
             "created_at": self.created_at,
             "transport_config": self.transport_config,
             "admin_password": self.admin_password,
+            "local_player_alias": self.local_player_alias,
         }
 
     @classmethod
@@ -138,6 +168,7 @@ class Game:
             created_at=data.get("created_at", time.time()),
             transport_config=data.get("transport_config", {}),
             admin_password=data.get("admin_password", ""),
+            local_player_alias=data.get("local_player_alias", ""),
         )
 
     def save_to_file(self, directory: Path):

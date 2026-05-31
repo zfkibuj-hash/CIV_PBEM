@@ -17,7 +17,11 @@ import os
 import logging
 from pathlib import Path
 
-from PyQt5.QtWidgets import QApplication, QMessageBox, QFileDialog, QLineEdit
+from PyQt5.QtWidgets import (
+    QApplication, QMessageBox, QFileDialog, QLineEdit,
+    QInputDialog, QDialog, QVBoxLayout, QLabel, QDialogButtonBox,
+    QFormLayout, QGroupBox, QPushButton,
+)
 from PyQt5.QtGui import QIcon
 
 from src.config import AppConfig
@@ -25,6 +29,7 @@ from src.gui.main_window import MainWindow
 from src.gui.app_controller import AppController
 from src.gui.tray_icon import TrayIcon
 from src.gui.file_watcher import SaveFileWatcher
+from src.i18n import set_language, get_i18n
 
 
 def get_resource_path(relative_path: str) -> Path:
@@ -67,10 +72,56 @@ def _play_notification_sound():
         pass  # Sound is non-critical
 
 
+def _ensure_single_instance() -> bool:
+    """Ensure only one instance of the application is running.
+
+    On Windows: uses a named kernel mutex.
+    On Linux/Mac: uses a lock file with fcntl.
+
+    Returns True if this is the only instance, False if another is already running.
+    """
+    if sys.platform == "win32":
+        import ctypes
+        # CreateMutex returns handle; GetLastError()==183 means already exists
+        mutex = ctypes.windll.kernel32.CreateMutexW(None, True, "Civ4PBEMManager_SingleInstance")
+        if ctypes.windll.kernel32.GetLastError() == 183:
+            # Another instance holds the mutex
+            ctypes.windll.kernel32.CloseHandle(mutex)
+            return False
+        # Keep mutex alive for the lifetime of the process (stored globally)
+        _ensure_single_instance._mutex = mutex
+        return True
+    else:
+        # Unix: use a lock file
+        import fcntl
+        lock_path = Path.home() / ".config" / "Civ4PBEMManager" / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        # Keep the file handle open for the lifetime of the process
+        _ensure_single_instance._lock_file = open(lock_path, "w")
+        try:
+            fcntl.flock(_ensure_single_instance._lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except (IOError, OSError):
+            return False
+
+
 def main():
     setup_logging()
     logger = logging.getLogger(__name__)
     logger.info("Starting Civ4 PBEM Manager")
+
+    # --- Single instance check ---
+    if not _ensure_single_instance():
+        # Another instance is already running — show message and exit
+        app = QApplication(sys.argv)
+        QMessageBox.warning(
+            None,
+            "Civ4 PBEM Manager",
+            "Program jest juz uruchomiony!\n\n"
+            "Application is already running!\n\n"
+            "Sprawdz zasobnik systemowy (tray).",
+        )
+        sys.exit(0)
 
     app = QApplication(sys.argv)
     app.setApplicationName("Civ4 PBEM Manager")
@@ -96,6 +147,51 @@ def main():
             pass
 
     config = AppConfig()
+    # Initialize i18n from saved language preference
+    set_language(config.language)
+
+    # --- Master password / unlock ---
+    # Encryption protects config FILE on disk. At runtime, we always need
+    # the data decrypted for transport to work. Password dialog unlocks
+    # visibility in UI (Settings shows credentials only when unlocked).
+    if config.has_master_password:
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            password, ok = QInputDialog.getText(
+                None,
+                "Civ4 PBEM Manager — Odblokuj / Unlock",
+                "Podaj haslo glowne / Enter master password:"
+                + (f"\n\n(Proba {attempt + 1}/{max_attempts})" if attempt > 0 else ""),
+                QLineEdit.Password,
+            )
+            if not ok:
+                # User cancelled — app runs but transport is locked
+                # (credentials not decrypted = can't connect to servers)
+                logger.info("Password dialog cancelled — running in locked mode")
+                break
+            if config.unlock(password):
+                logger.info("Config unlocked — full UI access")
+                break
+            else:
+                if attempt < max_attempts - 1:
+                    QMessageBox.warning(
+                        None,
+                        "Bledne haslo / Wrong password",
+                        "Nieprawidlowe haslo. Sprobuj ponownie.\n"
+                        "Wrong password. Try again.",
+                    )
+                else:
+                    QMessageBox.warning(
+                        None,
+                        "Bledne haslo / Wrong password",
+                        "Nie udalo sie odblokowac.\n"
+                        "Pobieranie/wysylanie save'ow nie bedzie dzialac.\n"
+                        "Mozesz przegladac gry, ale transport jest zablokowany.\n\n"
+                        "Failed to unlock.\n"
+                        "Download/upload will not work.\n"
+                        "You can browse games but transport is locked.",
+                    )
+
     controller = AppController(config)
     window = MainWindow(config)
     window.setWindowIcon(app_icon)

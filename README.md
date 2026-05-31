@@ -1,15 +1,19 @@
 # Civ4 PBEM Manager
 
-Desktopowa aplikacja Windows do obslugi gier Play-By-Email (PBEM) w Civilization 4: Beyond the Sword.
+Desktopowa aplikacja do obslugi gier Play-By-Email (PBEM) w Civilization 4: Beyond the Sword.
 
 ## Funkcje
 
-- **Transport plikow**: FTP / SFTP / WebDAV (Synology Cloud)
+- **Transport plikow**: FTP / SFTP / WebDAV / Email (per-game config)
 - **Powiadomienia email**: Automatyczne maile do nastepnego gracza
 - **Wiele gier**: Obsluga wielu rownoczesnych gier PBEM
-- **Automatyczne sprawdzanie**: Cykliczne sprawdzanie nowych save'ow
-- **Synchronizacja stanu**: Automatyczna synchronizacja stanu gry miedzy graczami
-- **Nowoczesny interfejs**: PyQt5, ciemny motyw
+- **Automatyczne sprawdzanie**: Cykliczne sprawdzanie nowych save'ow + watchdog
+- **Uruchom Civ4**: Przycisk "Uruchom Civ4" odpala gre z ostatnim pobranym save'em
+- **Statystyki gry**: Czas tur, srednie, najszybsza/najwolniejsza tura, per-player stats
+- **Multi-language**: Polski / English (przelaczanie w runtime)
+- **Single-instance**: Ochrona przed wielokrotnym uruchomieniem
+- **System tray**: Minimalizacja do zasobnika, powiadomienia balloon
+- **Ciemny/jasny motyw**: Przelaczanie w ustawieniach
 
 ## Instalacja
 
@@ -23,57 +27,59 @@ python main.py
 ### Budowanie .exe (Windows)
 
 ```bash
-pip install -r requirements.txt
-pyinstaller build.spec
+build.bat
 ```
 
-Wynikowy plik: `dist/Civ4PBEMManager.exe`
+Wynikowy plik: `dist/Civ4PBEMManager.exe` (~20-25 MB, z UPX ~15-18 MB)
 
-## Konfiguracja
+## Szybki start
 
-Przy pierwszym uruchomieniu:
+1. Uruchom aplikacje
+2. Przejdz do **Ustawienia** (lewy sidebar)
+3. Podaj nazwe gracza, email, folder save'ow
+4. Ustaw sciezke do Civ4 BTS (przycisk "Wykryj automatycznie" lub "Przegladaj")
+5. Skonfiguruj transport (zakladka Transport)
+6. Utworz gre: **+ Nowa gra** → dodaj graczy w kolejnosci tur
+7. Kazdy gracz importuje plik `.civ4pbem` (eksport/import w sidebar)
 
-1. Przejdz do **Ustawienia**
-2. Podaj swoja nazwe gracza i email
-3. Wskaz folder save'ow Civ4 (domyslnie: `Documents\My Games\Beyond the Sword\Saves\pbem`)
-4. Skonfiguruj transport (FTP/SFTP/WebDAV)
-5. Skonfiguruj SMTP do powiadomien email
-
-## Uzytkowanie
-
-1. **Nowa gra**: Kliknij "+ Nowa gra", podaj nazwe i dodaj graczy w kolejnosci tur
-2. **Pobierz save**: Gdy jest Twoja kolej, kliknij "Pobierz save"
-3. **Zagraj ture**: Otworz Civ4, zagraj, zapisz
-4. **Wyslij save**: Kliknij "Wyslij moj save" - aplikacja uploaduje plik i powiadomi nastepnego gracza
+Pelna instrukcja: **[MANUAL.md](MANUAL.md)**
 
 ## Architektura
 
 ```
-src/
-  config.py          - Zarzadzanie konfiguracja (JSON)
-  models/
-    game.py          - Modele danych: Game, Player, Turn
-  transport/
-    base.py          - Interfejs bazowy transportu
-    ftp_transport.py - Transport FTP
-    sftp_transport.py - Transport SFTP (paramiko)
-    webdav_transport.py - Transport WebDAV (Synology/Nextcloud)
-  notifier/
-    email_notifier.py - Powiadomienia SMTP
-  gui/
-    main_window.py   - Glowne okno aplikacji (PyQt5)
-    app_controller.py - Kontroler laczacy GUI z logika
-main.py              - Punkt wejscia
-build.spec           - Konfiguracja PyInstaller
+CIV_PBEM/
+├── main.py                 # Entry point + single-instance guard
+├── src/
+│   ├── config.py           # AppConfig (JSON, %APPDATA%)
+│   ├── i18n.py             # Internationalization PL/EN
+│   ├── launcher.py         # Civ4 detection + launch
+│   ├── models/
+│   │   ├── game.py         # Game, Player, Turn dataclasses
+│   │   └── statistics.py   # Game statistics calculations
+│   ├── transport/
+│   │   ├── base.py         # BaseTransport ABC
+│   │   ├── ftp_transport.py
+│   │   ├── sftp_transport.py
+│   │   ├── webdav_transport.py
+│   │   └── email_transport.py
+│   ├── notifier/
+│   │   └── email_notifier.py
+│   └── gui/
+│       ├── main_window.py  # MainWindow + dialogs + GameStatsDialog
+│       ├── app_controller.py
+│       ├── tray_icon.py
+│       └── file_watcher.py
+├── build.bat / build.spec  # Windows build
+└── MANUAL.md               # User manual
 ```
 
 ## Wymagania
 
 - Python 3.10+
-- PyQt5
-- paramiko (dla SFTP)
-- watchdog (planowane: monitoring folderu)
-- keyring (planowane: bezpieczne przechowywanie hasel)
+- PyQt5 >= 5.15
+- paramiko >= 3.0 (SFTP)
+- watchdog >= 3.0 (file monitoring)
+- PyInstaller >= 6.0 (build)
 
 ## Licencja
 

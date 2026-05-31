@@ -18,6 +18,9 @@ from PyQt5.QtGui import QIcon, QFont, QColor
 
 from src.config import AppConfig
 from src.models.game import Game, Player
+from src.i18n import t, get_i18n, set_language, LANGUAGES
+from src.models.statistics import calculate_game_stats, format_duration
+from src.launcher import detect_civ4_path, launch_civ4, is_civ4_running
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +319,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Civ4 PBEM Manager v1.0")
         self.setMinimumSize(800, 600)
         self.apply_theme()
+        self._restore_geometry()
 
         self._init_ui()
         self._load_games()
@@ -325,6 +329,39 @@ class MainWindow(QMainWindow):
         """Apply dark or light theme based on config."""
         is_dark = self.config.get("dark_mode", True)
         self.setStyleSheet(get_style_for_theme(is_dark))
+
+    def _save_geometry(self):
+        """Save window position and size to config."""
+        geo = self.geometry()
+        self.config.set("window_geometry", {
+            "x": geo.x(),
+            "y": geo.y(),
+            "width": geo.width(),
+            "height": geo.height(),
+        })
+
+    def _restore_geometry(self):
+        """Restore window position and size from config."""
+        geo = self.config.get("window_geometry")
+        if geo and isinstance(geo, dict):
+            from PyQt5.QtWidgets import QDesktopWidget
+            # Validate the position is on-screen
+            desktop = QDesktopWidget()
+            screen_rect = desktop.availableGeometry(self)
+            x = geo.get("x", 100)
+            y = geo.get("y", 100)
+            w = geo.get("width", 900)
+            h = geo.get("height", 650)
+            # Clamp to screen bounds
+            if x < 0 or x > screen_rect.width() - 100:
+                x = 100
+            if y < 0 or y > screen_rect.height() - 100:
+                y = 100
+            w = max(800, min(w, screen_rect.width()))
+            h = max(600, min(h, screen_rect.height()))
+            self.setGeometry(x, y, w, h)
+        else:
+            self.resize(900, 650)
 
     def _init_ui(self):
         central = QWidget()
@@ -368,6 +405,10 @@ class MainWindow(QMainWindow):
         self.btn_game_transport = QPushButton("Transport gry...")
         self.btn_game_transport.clicked.connect(self._on_game_transport)
         sidebar_layout.addWidget(self.btn_game_transport)
+
+        self.btn_stats = QPushButton(t("statistics"))
+        self.btn_stats.clicked.connect(self._on_statistics)
+        sidebar_layout.addWidget(self.btn_stats)
 
         btn_settings = QPushButton("Ustawienia")
         btn_settings.clicked.connect(self._on_settings)
@@ -429,6 +470,12 @@ class MainWindow(QMainWindow):
         self.btn_check_now.clicked.connect(self._on_manual_check)
         self.btn_check_now.setMinimumHeight(44)
         actions_layout.addWidget(self.btn_check_now)
+
+        self.btn_launch_civ4 = QPushButton(t("launch_civ4"))
+        self.btn_launch_civ4.clicked.connect(self._on_launch_civ4)
+        self.btn_launch_civ4.setMinimumHeight(44)
+        self.btn_launch_civ4.setStyleSheet("color: #ff9800; border-color: #ff9800;")
+        actions_layout.addWidget(self.btn_launch_civ4)
 
         content_layout.addLayout(actions_layout)
 
@@ -656,11 +703,57 @@ class MainWindow(QMainWindow):
                 transport_config=transport_config,
             )
 
+            # --- Player identity selection ---
+            # User must confirm which player from the list they are
+            player_names = [p.name for p in players]
+            my_local_name = self.config.player_name
+
+            # If local name matches a player exactly, pre-select it
+            default_idx = 0
+            for i, pn in enumerate(player_names):
+                if pn == my_local_name:
+                    default_idx = i
+                    break
+
+            from PyQt5.QtWidgets import QInputDialog
+            chosen_name, ok = QInputDialog.getItem(
+                self,
+                "Wybierz swojego gracza / Choose your player",
+                f"Gra: {name}\nTwoj lokalny nick: '{my_local_name}'\n\n"
+                f"Ktorym graczem z listy jestes?\n"
+                f"Which player are you?",
+                player_names,
+                default_idx,
+                False,  # not editable
+            )
+            if not ok:
+                return
+
+            # Set alias: local nick → game player name
+            if chosen_name != my_local_name:
+                game.local_player_alias = chosen_name
+            else:
+                game.local_player_alias = ""  # No alias needed, names match
+
+            # Confirm email for notifications
+            chosen_player = next((p for p in players if p.name == chosen_name), None)
+            if chosen_player:
+                confirmed_email, ok2 = QInputDialog.getText(
+                    self,
+                    "Potwierdz email / Confirm email",
+                    f"Gracz: {chosen_name}\n"
+                    f"Email na ktory dostaniesz powiadomienie o turze:",
+                    QLineEdit.Normal,
+                    chosen_player.email,
+                )
+                if ok2 and confirmed_email.strip():
+                    chosen_player.email = confirmed_email.strip()
+
             from src.config import get_games_dir
             game.save_to_file(get_games_dir())
             self.games.append(game)
             self._refresh_game_list()
-            self.status_label.setText(f"Zaimportowano gre: {name}")
+            self.status_label.setText(f"Zaimportowano gre: {name} (gracz: {chosen_name})")
 
         except Exception as e:
             QMessageBox.warning(self, "Blad importu", f"Nie udalo sie zaimportowac:\n{e}")
@@ -704,7 +797,29 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self.config, self)
         if dialog.exec_() == QDialog.Accepted:
             self.apply_theme()
+            # Refresh UI labels for new language
+            self._refresh_ui_language()
             self.settings_saved.emit()
+
+    def _refresh_ui_language(self):
+        """Update all UI text labels after language change."""
+        self.btn_download.setText(t("download_save"))
+        self.btn_upload.setText(t("upload_save"))
+        self.btn_open_folder.setText(t("open_folder"))
+        self.btn_check_now.setText(t("check_now"))
+        self.btn_launch_civ4.setText(t("launch_civ4"))
+        self.btn_revert.setText(t("revert_selected"))
+        self.btn_stats.setText(t("statistics"))
+        self.btn_import_game.setText(t("import_game"))
+        self.btn_export_game.setText(t("export_game"))
+        self.btn_delete_game.setText(t("delete_game"))
+        self.btn_game_transport.setText(t("game_transport"))
+        self.status_label.setText(t("ready"))
+        # Refresh game view if a game is selected
+        if self.current_game:
+            self._update_game_view()
+        else:
+            self.header_label.setText(t("select_game"))
 
     def _on_download(self):
         """Download save from remote."""
@@ -797,6 +912,50 @@ class MainWindow(QMainWindow):
         # The actual check logic will be connected in main.py
         self._on_check_timer()
 
+    def _on_statistics(self):
+        """Show game statistics dialog."""
+        if not self.current_game:
+            QMessageBox.information(self, t("info"), t("stats_no_game"))
+            return
+        dialog = GameStatsDialog(self.config, self.current_game, self)
+        dialog.exec_()
+
+    def _on_launch_civ4(self):
+        """Launch Civ4 BTS with the latest save for the current game.
+
+        Actual launch is handled via launch_civ4_requested signal,
+        connected to controller in main.py. Fallback: direct launch here.
+        """
+        civ4_path = self.config.civ4_path
+        if not civ4_path:
+            QMessageBox.warning(self, t("error"), t("civ4_not_found"))
+            return
+
+        # Check if already running (prevent duplicate instances)
+        if is_civ4_running():
+            self.status_label.setText(t("civ4_already_running"))
+            return
+
+        # Find the latest local save for the current game
+        save_file = None
+        if self.current_game:
+            save_dir = Path(self.config.save_path)
+            if save_dir.exists():
+                pattern = f"{self.current_game.name}_T*.CivBeyondSwordSave"
+                saves = list(save_dir.glob(pattern))
+                if saves:
+                    saves.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    save_file = str(saves[0])
+
+        success, msg_key = launch_civ4(civ4_path, save_file=save_file)
+        if success:
+            status = t(msg_key) if msg_key in ("civ4_launched", "civ4_already_running") else msg_key
+            if save_file:
+                status += f" ({Path(save_file).name})"
+            self.status_label.setText(status)
+        else:
+            self.status_label.setText(t(msg_key) if msg_key == "civ4_not_found" else msg_key)
+
     def _on_check_timer(self):
         """Periodic check for new saves."""
         self.status_label.setText("Sprawdzanie nowych save'ow...")
@@ -804,7 +963,8 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(2000, lambda: self.status_label.setText("Gotowy"))
 
     def closeEvent(self, event):
-        """Close button (X) always quits the application."""
+        """Close button (X) always quits the application. Saves geometry."""
+        self._save_geometry()
         event.accept()
 
     def changeEvent(self, event):
@@ -832,6 +992,7 @@ class NewGameDialog(QDialog):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("Nowa gra")
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setMinimumWidth(450)
         self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
         self._init_ui()
@@ -936,8 +1097,12 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("Ustawienia")
-        self.setMinimumSize(520, 480)
-        self.resize(540, 520)
+        # Remove the "?" button from title bar (useless, confuses users)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowContextHelpButtonHint
+        )
+        self.setMinimumSize(580, 560)
+        self.resize(640, 620)
         self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
         self._init_ui()
 
@@ -949,6 +1114,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._create_general_tab(), "Ogolne")
         tabs.addTab(self._create_transport_tab(), "Transport")
         tabs.addTab(self._create_notifications_tab(), "Powiadomienia")
+        tabs.addTab(self._create_security_tab(), "Bezpieczenstwo")
         layout.addWidget(tabs)
 
         # Buttons at the bottom (always visible)
@@ -961,8 +1127,15 @@ class SettingsDialog(QDialog):
 
     # --- Tab 1: General ---
     def _create_general_tab(self) -> QWidget:
+        from PyQt5.QtWidgets import QScrollArea
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
+        layout.setSpacing(10)
 
         # Player info
         player_group = QGroupBox("Gracz")
@@ -993,8 +1166,8 @@ class SettingsDialog(QDialog):
         interval_form.addRow("Sprawdzaj co:", self.check_interval)
         layout.addWidget(interval_group)
 
-        # Appearance
-        appearance_group = QGroupBox("Wyglad")
+        # Appearance & Language
+        appearance_group = QGroupBox("Wyglad i jezyk")
         appearance_form = QFormLayout(appearance_group)
         self.dark_mode_check = QCheckBox("Tryb ciemny")
         self.dark_mode_check.setChecked(self.config.get("dark_mode", True))
@@ -1008,14 +1181,63 @@ class SettingsDialog(QDialog):
         )
         appearance_form.addRow(self.auto_send_check)
 
+        # Language selector
+        self.language_combo = QComboBox()
+        self.language_combo.addItem("Polski", "pl")
+        self.language_combo.addItem("English", "en")
+        current_lang = self.config.language
+        idx = 0 if current_lang == "pl" else 1
+        self.language_combo.setCurrentIndex(idx)
+        appearance_form.addRow(t("language"), self.language_combo)
+
         layout.addWidget(appearance_group)
 
+        # Civ4 path (for Launch button)
+        launch_group = QGroupBox("Civ4 Beyond the Sword")
+        launch_form = QFormLayout(launch_group)
+
+        civ4_path_layout = QHBoxLayout()
+        self.civ4_path_edit = QLineEdit(self.config.civ4_path)
+        self.civ4_path_edit.setPlaceholderText("C:\\...\\Civ4BeyondSword.exe")
+        civ4_path_layout.addWidget(self.civ4_path_edit)
+
+        btn_browse_civ4 = QPushButton(t("browse"))
+        btn_browse_civ4.clicked.connect(self._browse_civ4_path)
+        civ4_path_layout.addWidget(btn_browse_civ4)
+
+        btn_detect_civ4 = QPushButton(t("detect_civ4"))
+        btn_detect_civ4.clicked.connect(self._detect_civ4)
+        civ4_path_layout.addWidget(btn_detect_civ4)
+
+        launch_form.addRow(t("civ4_path"), civ4_path_layout)
+        layout.addWidget(launch_group)
+
         layout.addStretch()
-        return tab
+        scroll.setWidget(tab)
+        return scroll
 
     # --- Tab 2: Transport ---
     def _create_transport_tab(self) -> QWidget:
         from PyQt5.QtWidgets import QScrollArea
+
+        # If config is locked, show lock message instead of form
+        if not self.config.is_unlocked:
+            locked_tab = QWidget()
+            locked_layout = QVBoxLayout(locked_tab)
+            locked_layout.addStretch()
+            lock_label = QLabel(
+                "🔒 Dane transportu sa zaszyfrowane.\n\n"
+                "Odblokuj aplikacje haslem glownym\n"
+                "aby wyswietlic i edytowac te ustawienia.\n\n"
+                "🔒 Transport data is encrypted.\n"
+                "Unlock the app with master password\n"
+                "to view and edit these settings."
+            )
+            lock_label.setAlignment(Qt.AlignCenter)
+            lock_label.setStyleSheet("font-size: 11pt; color: #ff9800; padding: 40px;")
+            locked_layout.addWidget(lock_label)
+            locked_layout.addStretch()
+            return locked_tab
 
         # Use a scroll area so email fields never overlap on small screens
         scroll = QScrollArea()
@@ -1137,6 +1359,22 @@ class SettingsDialog(QDialog):
 
     # --- Tab 3: Notifications ---
     def _create_notifications_tab(self) -> QWidget:
+        # If config is locked, show lock message
+        if not self.config.is_unlocked:
+            locked_tab = QWidget()
+            locked_layout = QVBoxLayout(locked_tab)
+            locked_layout.addStretch()
+            lock_label = QLabel(
+                "🔒 Dane SMTP sa zaszyfrowane.\n\n"
+                "Odblokuj aplikacje haslem glownym\n"
+                "aby wyswietlic i edytowac te ustawienia."
+            )
+            lock_label.setAlignment(Qt.AlignCenter)
+            lock_label.setStyleSheet("font-size: 11pt; color: #ff9800; padding: 40px;")
+            locked_layout.addWidget(lock_label)
+            locked_layout.addStretch()
+            return locked_tab
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
@@ -1180,6 +1418,106 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         return tab
 
+    # --- Tab 4: Security ---
+    def _create_security_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # Status
+        status_group = QGroupBox("Status szyfrowania / Encryption status")
+        status_layout = QVBoxLayout(status_group)
+
+        if self.config.has_master_password:
+            if self.config.is_unlocked:
+                status_label = QLabel("🔓 Odblokowane — dane dostepne\n🔓 Unlocked — data accessible")
+                status_label.setStyleSheet("color: #66bb6a; font-size: 10pt;")
+            else:
+                status_label = QLabel("🔒 Zablokowane — dane zaszyfrowane\n🔒 Locked — data encrypted")
+                status_label.setStyleSheet("color: #ff9800; font-size: 10pt;")
+        else:
+            status_label = QLabel(
+                "⚠ Brak hasla — dane przechowywane jako plain text!\n"
+                "⚠ No password — data stored as plain text!\n\n"
+                "Ustaw haslo glowne aby zaszyfrowac."
+            )
+            status_label.setStyleSheet("color: #ef5350; font-size: 10pt;")
+
+        status_layout.addWidget(status_label)
+        layout.addWidget(status_group)
+
+        # Set / Change password
+        password_group = QGroupBox("Haslo glowne / Master password")
+        password_form = QFormLayout(password_group)
+
+        self.new_password_edit = QLineEdit()
+        self.new_password_edit.setEchoMode(QLineEdit.Password)
+        self.new_password_edit.setPlaceholderText("Nowe haslo / New password")
+        password_form.addRow("Haslo:", self.new_password_edit)
+
+        self.confirm_password_edit = QLineEdit()
+        self.confirm_password_edit.setEchoMode(QLineEdit.Password)
+        self.confirm_password_edit.setPlaceholderText("Powtorz haslo / Confirm password")
+        password_form.addRow("Powtorz:", self.confirm_password_edit)
+
+        btn_set_password = QPushButton("Ustaw / zmien haslo")
+        btn_set_password.setStyleSheet("color: #ff9800; border-color: #ff9800; font-weight: bold;")
+        btn_set_password.clicked.connect(self._on_set_master_password)
+        password_form.addRow(btn_set_password)
+
+        layout.addWidget(password_group)
+
+        # Info
+        info_label = QLabel(
+            "Haslo glowne szyfruje: dane transportu (FTP/SFTP/WebDAV/Email),\n"
+            "loginy, hasla SMTP, hasla do serwerow.\n\n"
+            "Bez hasla te dane beda wymagane przy kazdym uruchomieniu.\n"
+            "UWAGA: Jesli zapomnisz hasla, musisz usunac config i ustawic od nowa!\n\n"
+            "Master password encrypts: transport credentials, SMTP passwords.\n"
+            "If you forget it, you must delete config and set up again."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #9e9e9e; font-size: 9pt; padding: 8px;")
+        layout.addWidget(info_label)
+
+        layout.addStretch()
+        return tab
+
+    def _on_set_master_password(self):
+        """Set or change the master password."""
+        new_pass = self.new_password_edit.text()
+        confirm = self.confirm_password_edit.text()
+
+        if not new_pass:
+            QMessageBox.warning(self, "Blad", "Haslo nie moze byc puste.")
+            return
+
+        if len(new_pass) < 4:
+            QMessageBox.warning(self, "Blad", "Haslo musi miec minimum 4 znaki.")
+            return
+
+        if new_pass != confirm:
+            QMessageBox.warning(self, "Blad", "Hasla nie sa identyczne!\nPasswords don't match!")
+            return
+
+        # If already has password and is locked, can't change
+        if self.config.has_master_password and not self.config.is_unlocked:
+            QMessageBox.warning(
+                self, "Blad",
+                "Nie mozna zmienic hasla gdy config jest zablokowany.\n"
+                "Najpierw odblokuj przy starcie aplikacji."
+            )
+            return
+
+        self.config.set_master_password(new_pass)
+        QMessageBox.information(
+            self, "OK",
+            "Haslo ustawione! Dane zostaly zaszyfrowane.\n"
+            "Password set! Data has been encrypted.\n\n"
+            "Od teraz przy starcie program bedzie pytac o haslo."
+        )
+        self.new_password_edit.clear()
+        self.confirm_password_edit.clear()
+
     # --- Logic ---
     def _on_transport_type_changed(self, transport_type: str):
         """Show/hide transport panels based on selected type."""
@@ -1193,6 +1531,24 @@ class SettingsDialog(QDialog):
         if path:
             self.path_edit.setText(path)
 
+    def _browse_civ4_path(self):
+        """Browse for Civ4 BTS executable."""
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Wybierz Civ4BeyondSword.exe", self.civ4_path_edit.text(),
+            "Executable (*.exe);;All Files (*)"
+        )
+        if filepath:
+            self.civ4_path_edit.setText(filepath)
+
+    def _detect_civ4(self):
+        """Auto-detect Civ4 BTS installation path."""
+        detected = detect_civ4_path()
+        if detected:
+            self.civ4_path_edit.setText(detected)
+            QMessageBox.information(self, "OK", t("civ4_detected", path=detected))
+        else:
+            QMessageBox.information(self, t("info"), t("civ4_not_detected"))
+
     def _save_settings(self):
         self.config.player_name = self.player_name_edit.text().strip()
         self.config.set("player_email", self.player_email_edit.text().strip())
@@ -1200,6 +1556,14 @@ class SettingsDialog(QDialog):
         self.config.set("check_interval_minutes", self.check_interval.value())
         self.config.set("dark_mode", self.dark_mode_check.isChecked())
         self.config.set("auto_send", self.auto_send_check.isChecked())
+
+        # Language
+        new_lang = self.language_combo.currentData()
+        self.config.language = new_lang
+        set_language(new_lang)
+
+        # Civ4 path
+        self.config.civ4_path = self.civ4_path_edit.text().strip()
 
         transport_data = {
             "type": self.transport_type.currentText(),
@@ -1258,8 +1622,9 @@ class GameTransportDialog(QDialog):
         self.game = game
         self.all_games = all_games
         self.setWindowTitle(f"Transport: {game.name}")
-        self.setMinimumSize(520, 480)
-        self.resize(540, 520)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setMinimumSize(560, 500)
+        self.resize(600, 560)
         self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
         self._init_ui()
 
@@ -1486,3 +1851,72 @@ class GameTransportDialog(QDialog):
                 "from_address": self.e_from.text().strip(),
             },
         }
+
+
+
+class GameStatsDialog(QDialog):
+    """Dialog showing comprehensive game statistics."""
+
+    def __init__(self, config: AppConfig, game: Game, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.game = game
+        self.setWindowTitle(t("stats_title", name=game.name))
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setMinimumSize(500, 450)
+        self.resize(560, 500)
+        self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+
+        stats = calculate_game_stats(self.game)
+
+        # Game overview
+        overview_group = QGroupBox(t("stats_title", name=self.game.name))
+        overview_form = QFormLayout(overview_group)
+
+        overview_form.addRow(t("stats_game_started"), QLabel(stats.game_started_formatted))
+        overview_form.addRow(t("stats_last_activity"), QLabel(stats.last_activity_formatted))
+        overview_form.addRow(t("stats_current_round"), QLabel(str(stats.current_round)))
+        overview_form.addRow(t("stats_total_turns"), QLabel(str(stats.total_turns)))
+        overview_form.addRow(t("stats_total_time"), QLabel(stats.total_time_formatted))
+        overview_form.addRow(t("stats_avg_turn_time"), QLabel(stats.avg_turn_time_formatted))
+        overview_form.addRow(t("stats_fastest_turn"), QLabel(stats.fastest_turn_formatted))
+        overview_form.addRow(t("stats_slowest_turn"), QLabel(stats.slowest_turn_formatted))
+
+        layout.addWidget(overview_group)
+
+        # Per-player stats table
+        player_group = QGroupBox(t("stats_per_player"))
+        player_layout = QVBoxLayout(player_group)
+
+        from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView
+
+        table = QTableWidget()
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels([
+            t("stats_player_name"),
+            t("stats_player_turns"),
+            t("stats_player_avg_time"),
+            t("stats_player_total_time"),
+        ])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setRowCount(len(stats.player_stats))
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+
+        for row, ps in enumerate(stats.player_stats):
+            table.setItem(row, 0, QTableWidgetItem(ps.name))
+            table.setItem(row, 1, QTableWidgetItem(str(ps.total_turns)))
+            table.setItem(row, 2, QTableWidgetItem(ps.avg_turn_time_formatted))
+            table.setItem(row, 3, QTableWidgetItem(ps.total_time_formatted))
+
+        player_layout.addWidget(table)
+        layout.addWidget(player_group)
+
+        # Close button
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
