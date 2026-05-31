@@ -515,6 +515,14 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Civ4 juz jest uruchomiony",
         "en": "Civ4 is already running",
     },
+    "civ4_leader_name": {
+        "pl": "Nazwa lidera Civ4 (jak w save):",
+        "en": "Civ4 leader name (as in save file):",
+    },
+    "civ4_leader_placeholder": {
+        "pl": "np. Zara_Yaqob, Montezuma, Washington",
+        "en": "e.g. Zara_Yaqob, Montezuma, Washington",
+    },
     "civ4_detected": {
         "pl": "Wykryto Civ4: {path}",
         "en": "Civ4 detected: {path}",
