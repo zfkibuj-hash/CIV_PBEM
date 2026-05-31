@@ -79,9 +79,29 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Historia tur (kliknij aby przywrocic)",
         "en": "Turn history (click to revert)",
     },
+    "history_filter": {
+        "pl": "Filtr:",
+        "en": "Filter:",
+    },
+    "history_filter_all": {
+        "pl": "Wszyscy gracze",
+        "en": "All players",
+    },
     "revert_selected": {
         "pl": "Przywroc zaznaczona ture",
         "en": "Revert to selected turn",
+    },
+    "launch_this_turn": {
+        "pl": "Uruchom te ture",
+        "en": "Launch this turn",
+    },
+    "launch_no_file": {
+        "pl": "Ta tura nie ma skojarzonego pliku save.",
+        "en": "This turn has no associated save file.",
+    },
+    "launch_file_missing": {
+        "pl": "Plik save nie istnieje lokalnie:\n{filename}\n\nPobierz go najpierw z serwera.",
+        "en": "Save file not found locally:\n{filename}\n\nDownload it from server first.",
     },
     "ready": {
         "pl": "Gotowy",

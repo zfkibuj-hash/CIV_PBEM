@@ -483,14 +483,35 @@ class MainWindow(QMainWindow):
         # History - clickable list for turn revert
         history_group = QGroupBox(t("history_group"))
         history_layout = QVBoxLayout(history_group)
+
+        # Player filter
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel(t("history_filter")))
+        self.history_filter_combo = QComboBox()
+        self.history_filter_combo.addItem(t("history_filter_all"), "")
+        self.history_filter_combo.currentIndexChanged.connect(self._on_history_filter_changed)
+        filter_layout.addWidget(self.history_filter_combo)
+        filter_layout.addStretch()
+        history_layout.addLayout(filter_layout)
+
         self.history_list = QListWidget()
-        self.history_list.setMaximumHeight(160)
+        self.history_list.setMaximumHeight(180)
         history_layout.addWidget(self.history_list)
+
+        # Buttons row
+        history_buttons = QHBoxLayout()
 
         self.btn_revert = QPushButton(t("revert_selected"))
         self.btn_revert.setStyleSheet("color: #ff9800; border-color: #ff9800;")
         self.btn_revert.clicked.connect(self._on_revert_turn)
-        history_layout.addWidget(self.btn_revert)
+        history_buttons.addWidget(self.btn_revert)
+
+        self.btn_launch_turn = QPushButton(t("launch_this_turn"))
+        self.btn_launch_turn.setStyleSheet("color: #42a5f5; border-color: #42a5f5;")
+        self.btn_launch_turn.clicked.connect(self._on_launch_turn)
+        history_buttons.addWidget(self.btn_launch_turn)
+
+        history_layout.addLayout(history_buttons)
 
         content_layout.addWidget(history_group)
 
@@ -597,18 +618,22 @@ class MainWindow(QMainWindow):
                 f"{t('playing_since', name=cp_name, time=elapsed_str)}"
             )
 
-        # History
-        self.history_list.clear()
-        for turn in reversed(game.history[-20:]):
-            import datetime
-            dt = datetime.datetime.fromtimestamp(turn.timestamp)
-            year_str = turn_to_year_str(turn.turn_number, game.game_speed)
-            text = f"{dt.strftime('%d.%m %H:%M')}  {turn.player_name} -> {t('turn')} {turn.turn_number} ({year_str})  [{turn.filename}]"
-            item = QListWidgetItem(text)
-            # Store the history index as user data
-            idx = game.history.index(turn)
-            item.setData(Qt.UserRole, idx)
-            self.history_list.addItem(item)
+        # Update filter combo with players from this game
+        current_filter = self.history_filter_combo.currentData()
+        self.history_filter_combo.blockSignals(True)
+        self.history_filter_combo.clear()
+        self.history_filter_combo.addItem(t("history_filter_all"), "")
+        for p in game.players:
+            self.history_filter_combo.addItem(p.name, p.name)
+        # Restore previous selection if still valid
+        if current_filter:
+            idx = self.history_filter_combo.findData(current_filter)
+            if idx >= 0:
+                self.history_filter_combo.setCurrentIndex(idx)
+        self.history_filter_combo.blockSignals(False)
+
+        # History (filtered)
+        self._populate_history_list()
 
     @staticmethod
     def _format_elapsed(seconds: float) -> str:
@@ -625,6 +650,84 @@ class MainWindow(QMainWindow):
             return f"{minutes} min."
         else:
             return "< 1 min."
+
+    def _populate_history_list(self):
+        """Fill history list with turns, respecting the player filter."""
+        game = self.current_game
+        if not game:
+            return
+
+        self.history_list.clear()
+        filter_player = self.history_filter_combo.currentData() or ""
+
+        for turn in reversed(game.history[-50:]):
+            # Apply filter
+            if filter_player and turn.player_name != filter_player:
+                continue
+
+            import datetime
+            dt = datetime.datetime.fromtimestamp(turn.timestamp)
+            year_str = turn_to_year_str(turn.turn_number, game.game_speed)
+            text = f"{dt.strftime('%d.%m %H:%M')}  {turn.player_name} -> {t('turn')} {turn.turn_number} ({year_str})  [{turn.filename}]"
+            item = QListWidgetItem(text)
+            idx = game.history.index(turn)
+            item.setData(Qt.UserRole, idx)
+            self.history_list.addItem(item)
+
+    def _on_history_filter_changed(self, index: int):
+        """Refresh history list when player filter changes."""
+        self._populate_history_list()
+
+    def _on_launch_turn(self):
+        """Launch Civ4 with the save file from the selected history entry."""
+        if not self.current_game:
+            return
+
+        selected = self.history_list.currentItem()
+        if not selected:
+            QMessageBox.information(self, t("info"), t("revert_select_hint"))
+            return
+
+        history_index = selected.data(Qt.UserRole)
+        if history_index is None:
+            return
+
+        game = self.current_game
+        if history_index >= len(game.history):
+            return
+
+        target_turn = game.history[history_index]
+        if not target_turn.filename:
+            QMessageBox.warning(self, t("error"), t("launch_no_file"))
+            return
+
+        # Check if the save file exists locally
+        save_dir = Path(self.config.save_path)
+        local_path = save_dir / target_turn.filename
+
+        if not local_path.exists():
+            QMessageBox.warning(
+                self, t("error"),
+                t("launch_file_missing", filename=target_turn.filename)
+            )
+            return
+
+        # Check Civ4 path
+        civ4_path = self.config.civ4_path
+        if not civ4_path:
+            QMessageBox.warning(self, t("error"), t("civ4_not_found"))
+            return
+
+        # Launch
+        if is_civ4_running():
+            self.status_label.setText(t("civ4_already_running"))
+            return
+
+        success, msg_key = launch_civ4(civ4_path, save_file=str(local_path))
+        if success:
+            self.status_label.setText(f"{t('civ4_launched')} ({target_turn.filename})")
+        else:
+            self.status_label.setText(t(msg_key) if msg_key == "civ4_not_found" else msg_key)
 
     def _on_new_game(self):
         """Create a new game dialog."""
