@@ -183,9 +183,11 @@ CIV_PBEM/
 
 ##### Main Window
 - Left sidebar (240px): game list, "+ Nowa gra", "Importuj gre...", "Eksportuj gre...", "Usun gre", "Transport gry...", "Ustawienia"
-- Right panel: header, status banner, player order + time since last turn, action buttons, clickable turn history list
+- Right panel: header (game name + turn + game year), status banner, player order + time since last turn, action buttons, **filterable** turn history list
 - Status bar at bottom
 - **Time since last turn**: shows "PlayerName gra juz: X dni, Y godz." below player order
+- **History list**: player filter dropdown (all/specific player), shows up to 50 turns
+- **"Launch this turn" button**: launches Civ4 with save file from selected history entry (if file exists locally)
 
 ##### Action Buttons
 - "Pobierz save" (green), "Wyslij moj save" (blue), "Otworz folder", "Sprawdz teraz"
