@@ -53,11 +53,6 @@ class Game:
     # Local player alias: maps local config.player_name → game player name
     # e.g. local nick "kiroman" maps to game player "K4arol"
     local_player_alias: str = ""
-    # Civ4 leader name for this local player (used in native save filenames)
-    # Civ4 names files like: GameName_BC-4000_to_ZaraYaqob.CivBeyondSwordSave
-    # where ZaraYaqob is the NEXT player's leader. So each player stores their
-    # leader name, and download logic looks for "_to_{my_leader}"
-    local_leader_name: str = ""
 
     @property
     def current_player(self) -> Optional[Player]:
@@ -158,7 +153,6 @@ class Game:
             "transport_config": self.transport_config,
             "admin_password": self.admin_password,
             "local_player_alias": self.local_player_alias,
-            "local_leader_name": self.local_leader_name,
         }
 
     @classmethod
@@ -175,7 +169,6 @@ class Game:
             transport_config=data.get("transport_config", {}),
             admin_password=data.get("admin_password", ""),
             local_player_alias=data.get("local_player_alias", ""),
-            local_leader_name=data.get("local_leader_name", ""),
         )
 
     def save_to_file(self, directory: Path):

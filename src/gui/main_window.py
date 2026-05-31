@@ -749,19 +749,6 @@ class MainWindow(QMainWindow):
                 if ok2 and confirmed_email.strip():
                     chosen_player.email = confirmed_email.strip()
 
-            # Ask for Civ4 leader name (used for matching save filenames)
-            # Civ4 names files like: GameName_BC-4000_to_ZaraYaqob.CivBeyondSwordSave
-            leader_name, ok3 = QInputDialog.getText(
-                self,
-                t("civ4_leader_name"),
-                t("civ4_leader_name") + "\n" + t("civ4_leader_placeholder")
-                + "\n\n(Civ4 save: ...Game_BC-4000_to_THIS_NAME.CivBeyondSwordSave)",
-                QLineEdit.Normal,
-                chosen_name.replace(" ", "_"),  # Suggest player name with underscores
-            )
-            if ok3 and leader_name.strip():
-                game.local_leader_name = leader_name.strip()
-
             from src.config import get_games_dir
             game.save_to_file(get_games_dir())
             self.games.append(game)

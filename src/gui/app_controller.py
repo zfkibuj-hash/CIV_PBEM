@@ -142,13 +142,9 @@ class AppController(QObject):
     def download_save(self, game: Game, watcher=None) -> tuple[bool, str]:
         """Download the latest save meant for this player.
 
-        Supports TWO filename patterns:
-        1. Civ4 native: {GameName}_{TurnDate}_to_{LeaderName}.CivBeyondSwordSave
-           - Matched by "_to_{local_leader_name}" in filename
-        2. App custom:  {GameName}_T{turn}_{SenderName}.CivBeyondSwordSave
-           - Matched by "_{prev_player.name}." in filename (legacy)
-
-        Falls back to downloading the newest .CivBeyondSwordSave if no pattern matches.
+        Matches by our naming pattern: _{prev_player_name}. in filename.
+        Civ4 saves locally with its own names, but on the server everything
+        uses our standardized pattern: {GameName}_T{turn}_{Sender}.CivBeyondSwordSave
         """
         transport = self._create_transport_for_game(game)
         if not transport:
@@ -156,7 +152,6 @@ class AppController(QObject):
 
         my_name = self.config.player_name
         my_game_name = game.get_game_player_name(my_name)
-        my_leader = game.local_leader_name  # Civ4 leader name (e.g. "Zara_Yaqob")
 
         # Find my index in the player list
         my_index = None
@@ -171,32 +166,17 @@ class AppController(QObject):
         prev_index = (my_index - 1) % len(game.players)
         prev_player = game.players[prev_index]
 
-        # Get all save files from remote
+        # Get all saves from remote and match by our pattern
         all_saves = transport.list_files(game.name)
-        all_civ_saves = [f for f in all_saves if f.endswith(".CivBeyondSwordSave")]
+        my_saves = [
+            f for f in all_saves
+            if f.endswith(".CivBeyondSwordSave") and f"_{prev_player.name}." in f
+        ]
 
-        if not all_civ_saves:
-            return False, f"Brak save'ow na serwerze"
-
-        # Try matching by Civ4 native pattern: "_to_{MyLeaderName}"
-        my_saves = []
-        if my_leader:
-            # Civ4 uses underscores in leader names in filenames
-            leader_pattern = f"_to_{my_leader}"
-            my_saves = [f for f in all_civ_saves if leader_pattern in f]
-
-        # Fallback: try app custom pattern "_{prev_player_name}."
         if not my_saves:
-            my_saves = [
-                f for f in all_civ_saves
-                if f"_{prev_player.name}." in f
-            ]
+            return False, f"Brak save'a od {prev_player.name}"
 
-        # Last resort: just get the newest file (by name sort)
-        if not my_saves:
-            my_saves = all_civ_saves
-
-        # Get the latest
+        # Get the latest (sorted by name = sorted by turn number)
         my_saves.sort()
         latest = my_saves[-1]
 
@@ -218,12 +198,8 @@ class AppController(QObject):
             return False, "Blad pobierania"
 
     def download_save_list(self, game: Game) -> list[str]:
-        """Get list of saves available for THIS player.
-
-        Uses same matching logic as download_save:
-        1. Civ4 native: "_to_{my_leader_name}" in filename
-        2. App custom: "_{prev_player_name}." in filename
-        3. Fallback: all .CivBeyondSwordSave files
+        """Get list of saves available for THIS player (sent by previous player).
+        Matches by our pattern: _{prev_player_name}. in filename.
         """
         transport = self._create_transport_for_game(game)
         if not transport:
@@ -231,7 +207,6 @@ class AppController(QObject):
 
         my_name = self.config.player_name
         my_game_name = game.get_game_player_name(my_name)
-        my_leader = game.local_leader_name
 
         my_index = None
         for i, p in enumerate(game.players):
@@ -245,22 +220,10 @@ class AppController(QObject):
         prev_player = game.players[prev_index]
 
         files = transport.list_files(game.name)
-        all_civ_saves = [f for f in files if f.endswith(".CivBeyondSwordSave")]
-
-        # Try Civ4 native pattern
-        if my_leader:
-            leader_pattern = f"_to_{my_leader}"
-            matched = [f for f in all_civ_saves if leader_pattern in f]
-            if matched:
-                return matched
-
-        # Try app custom pattern
-        matched = [f for f in all_civ_saves if f"_{prev_player.name}." in f]
-        if matched:
-            return matched
-
-        # Fallback: return all saves
-        return all_civ_saves
+        return [
+            f for f in files
+            if f.endswith(".CivBeyondSwordSave") and f"_{prev_player.name}." in f
+        ]
 
     def download_specific_save(self, game: Game, filename: str) -> tuple[bool, str]:
         """Download a specific save file by name."""
@@ -281,9 +244,9 @@ class AppController(QObject):
     def upload_save(self, game: Game, local_path: Path) -> tuple[bool, str]:
         """Upload a save file and advance the turn.
 
-        Uploads the file with its ORIGINAL name (as Civ4 saved it).
-        Does NOT rename to a custom pattern — this preserves Civ4 native naming
-        like 'GameName_BC-4000_to_NextLeader.CivBeyondSwordSave'.
+        Renames to our pattern: {GameName}_T{turn}_{SenderGameName}.CivBeyondSwordSave
+        Civ4 saves with its own naming locally, but we upload under our
+        standardized name so download matching works reliably.
         """
         transport = self._create_transport_for_game(game)
         if not transport:
@@ -291,8 +254,7 @@ class AppController(QObject):
 
         my_name = self.config.player_name
         my_game_name = game.get_game_player_name(my_name)
-        # Use original filename from disk (Civ4 native naming)
-        remote_filename = local_path.name
+        remote_filename = game.get_save_filename(my_name)
 
         # For email transport in individual mode, pass the next player's email
         next_player = game.next_player
