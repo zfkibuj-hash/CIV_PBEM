@@ -219,6 +219,10 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Nazwa gry:",
         "en": "Game name:",
     },
+    "game_speed": {
+        "pl": "Predkosc gry:",
+        "en": "Game speed:",
+    },
     "game_name_placeholder": {
         "pl": "np. WojnaSwiatowa",
         "en": "e.g. WorldWar",

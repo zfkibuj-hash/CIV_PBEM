@@ -39,7 +39,8 @@ CIV_PBEM/
     ├── models/
     │   ├── __init__.py
     │   ├── game.py                  # Game, Player, Turn dataclasses + revert_to_turn() + delete_file()
-    │   └── statistics.py            # GameStats, PlayerStats — calculated from turn history
+    │   ├── statistics.py            # GameStats, PlayerStats — calculated from turn history
+    │   └── turn_calendar.py         # Turn-to-year mapping for all 4 game speeds (Quick/Normal/Epic/Marathon)
     ├── transport/
     │   ├── __init__.py
     │   ├── base.py                  # BaseTransport ABC
@@ -71,6 +72,7 @@ CIV_PBEM/
   - Civ4 locally saves as `GameName_BC-4000_to_NextLeader.CivBeyondSwordSave` — we don't care, we rename on upload
   - Download matches by `_{prev_player_name}.` in filename
 - `Game.local_player_alias`: maps local config.player_name → game player name (see section 19)
+- `Game.game_speed`: "quick" / "normal" / "epic" / "marathon" — determines turn-to-year mapping
 - `Game.delete_file(directory)` removes the JSON from disk
 
 #### 2. Per-Game Transport Configuration
@@ -253,6 +255,7 @@ CIV_PBEM/
 - Player alias mapping: local nick ≠ game name → resolved transparently via Game.local_player_alias
 - Remote {GameName}.config sync: first uploader establishes canonical config, all others auto-sync on periodic check
 - Save filename always uses GAME player name (alias-resolved), not local nick
+- Turn calendar: game year displayed alongside turn number everywhere in UI (header, sidebar, history, stats)
 - Window geometry (position + size) saved on close, restored on start (clamped to screen bounds)
 - All QDialog subclasses: remove `WindowContextHelpButtonHint` (the useless "?" button in title bar)
 - Settings dialog: General tab wrapped in QScrollArea for small screens; default size 640×620
@@ -363,6 +366,30 @@ CIV_PBEM/
 - **Controller**: `download_save()`, `download_save_list()`, `upload_save()` all use alias-resolved name for finding player index, matching saves by sender name, generating filenames
 - **Serialization**: `local_player_alias` saved in game JSON and restored via `from_dict()`
 - **Important**: alias is per-game, per-machine. Same player can have different nicks on different PCs.
+
+#### 21. Turn Calendar / Game Year Display (`src/models/turn_calendar.py`)
+- **Problem**: Civ4 displays game year (e.g. "4000 BC", "1200 AD") but our app only showed turn numbers
+- **Solution**: `turn_calendar.py` maps turn number → game year based on selected speed
+- **Game speed** stored in `Game.game_speed` field, selected in NewGameDialog (QComboBox):
+  - Quick: 330 turns
+  - Normal: 500 turns (default)
+  - Epic: 750 turns
+  - Marathon: 1500 turns
+- **Data structure**: `SPEED_DATA[speed]` = list of `(num_turns, years_per_turn)` tuples per iteration
+  - All speeds start at 4000 BC and end at 2050 AD
+  - Fractional years_per_turn for later eras (0.5 = 2 turns/year, 0.25 = 4 turns/year)
+- **API**:
+  - `turn_to_year(turn, speed)` → float (negative=BC, positive=AD)
+  - `format_game_year(year)` → "4000 BC" / "100 AD"
+  - `turn_to_year_str(turn, speed)` → combined helper
+  - `get_total_turns(speed)` → int
+- **Displayed in UI** (always alongside turn number):
+  - Game view header: "GameName - Turn 50 (1000 BC)"
+  - Sidebar game list: "[Turn 50, 1000 BC]"
+  - History list: "... → Turn 50 (1000 BC) [filename]"
+  - Statistics dialog: "Current round: 50 (1000 BC)"
+- **NewGameDialog**: speed selector dropdown with total turns shown
+- **Export (.civ4pbem)**: game_speed included so imported games show correct years
 
 #### 20. Remote Config Sync (`{GameName}.config` on server)
 - **Problem**: if players set different transport configs (wrong host, port, folder), saves end up in wrong places and game breaks after first round.

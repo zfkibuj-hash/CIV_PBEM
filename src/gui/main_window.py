@@ -20,6 +20,7 @@ from src.config import AppConfig
 from src.models.game import Game, Player
 from src.i18n import t, get_i18n, set_language, LANGUAGES
 from src.models.statistics import calculate_game_stats, format_duration
+from src.models.turn_calendar import turn_to_year_str
 from src.launcher import detect_civ4_path, detect_save_path, launch_civ4, is_civ4_running
 
 logger = logging.getLogger(__name__)
@@ -533,12 +534,13 @@ class MainWindow(QMainWindow):
         my_name = self.config.player_name
         for game in self.games:
             is_my_turn = game.is_my_turn(my_name)
+            year_str = turn_to_year_str(game.current_turn, game.game_speed)
             if is_my_turn:
-                text = f">> {game.name} [{t('turn')} {game.current_turn}]\n   {t('your_turn')}"
+                text = f">> {game.name} [{t('turn')} {game.current_turn}, {year_str}]\n   {t('your_turn')}"
             else:
                 cp = game.current_player
                 who = cp.name if cp else "?"
-                text = f"   {game.name} [{t('turn')} {game.current_turn}]\n   {t('waiting')}: {who}"
+                text = f"   {game.name} [{t('turn')} {game.current_turn}, {year_str}]\n   {t('waiting')}: {who}"
             item = QListWidgetItem(text)
             if is_my_turn:
                 item.setForeground(QColor("#66bb6a"))
@@ -558,7 +560,7 @@ class MainWindow(QMainWindow):
 
         my_name = self.config.player_name
 
-        self.header_label.setText(f"{game.name}  -  {t('turn')} {game.current_turn}")
+        self.header_label.setText(f"{game.name}  -  {t('turn')} {game.current_turn} ({turn_to_year_str(game.current_turn, game.game_speed)})")
 
         if game.is_my_turn(my_name):
             self.status_banner.setText(t("your_turn_banner"))
@@ -600,7 +602,8 @@ class MainWindow(QMainWindow):
         for turn in reversed(game.history[-20:]):
             import datetime
             dt = datetime.datetime.fromtimestamp(turn.timestamp)
-            text = f"{dt.strftime('%d.%m %H:%M')}  {turn.player_name} -> tura {turn.turn_number}  [{turn.filename}]"
+            year_str = turn_to_year_str(turn.turn_number, game.game_speed)
+            text = f"{dt.strftime('%d.%m %H:%M')}  {turn.player_name} -> {t('turn')} {turn.turn_number} ({year_str})  [{turn.filename}]"
             item = QListWidgetItem(text)
             # Store the history index as user data
             idx = game.history.index(turn)
@@ -1009,6 +1012,15 @@ class NewGameDialog(QDialog):
         self.admin_password_edit.setEchoMode(QLineEdit.Password)
         form.addRow("Haslo admina:", self.admin_password_edit)
 
+        # Game speed selector
+        self.speed_combo = QComboBox()
+        self.speed_combo.addItem("Quick (330 tur)", "quick")
+        self.speed_combo.addItem("Normal (500 tur)", "normal")
+        self.speed_combo.addItem("Epic (750 tur)", "epic")
+        self.speed_combo.addItem("Marathon (1500 tur)", "marathon")
+        self.speed_combo.setCurrentIndex(1)  # Default: Normal
+        form.addRow(t("game_speed"), self.speed_combo)
+
         layout.addLayout(form)
 
         # Players
@@ -1086,6 +1098,7 @@ class NewGameDialog(QDialog):
             name=name,
             players=players,
             admin_password=self.admin_password_edit.text().strip(),
+            game_speed=self.speed_combo.currentData(),
         )
 
 
@@ -1887,7 +1900,9 @@ class GameStatsDialog(QDialog):
 
         overview_form.addRow(t("stats_game_started"), QLabel(stats.game_started_formatted))
         overview_form.addRow(t("stats_last_activity"), QLabel(stats.last_activity_formatted))
-        overview_form.addRow(t("stats_current_round"), QLabel(str(stats.current_round)))
+        overview_form.addRow(t("stats_current_round"), QLabel(
+            f"{stats.current_round} ({turn_to_year_str(stats.current_round, self.game.game_speed)})"
+        ))
         overview_form.addRow(t("stats_total_turns"), QLabel(str(stats.total_turns)))
         overview_form.addRow(t("stats_total_time"), QLabel(stats.total_time_formatted))
         overview_form.addRow(t("stats_avg_turn_time"), QLabel(stats.avg_turn_time_formatted))
