@@ -276,3 +276,39 @@ class EmailTransport(BaseTransport):
             else:
                 result += part
         return result
+
+
+    def purge_game(self, game_name: str) -> tuple[bool, int]:
+        """Delete ALL emails associated with a specific game from the mailbox.
+
+        Searches for emails with subject containing "[CIV4PBEM] {game_name}"
+        and marks them for deletion. Does NOT affect other games.
+
+        Returns:
+            (success, count_deleted)
+        """
+        try:
+            imap = self._get_imap()
+            imap.select("INBOX")
+
+            search_query = f'(SUBJECT "[CIV4PBEM] {game_name}")'
+            status, msg_ids = imap.search(None, search_query)
+            if status != "OK" or not msg_ids[0]:
+                imap.logout()
+                return True, 0  # No messages to delete = success
+
+            ids = msg_ids[0].split()
+            count = 0
+            for msg_id in ids:
+                imap.store(msg_id, "+FLAGS", "\\Deleted")
+                count += 1
+
+            # Permanently remove flagged messages
+            imap.expunge()
+            imap.logout()
+
+            logger.info(f"Purged {count} emails for game '{game_name}'")
+            return True, count
+        except Exception as e:
+            logger.error(f"Failed to purge emails for game '{game_name}': {e}")
+            return False, 0

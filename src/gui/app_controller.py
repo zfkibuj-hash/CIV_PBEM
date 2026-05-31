@@ -99,9 +99,9 @@ class AppController(QObject):
     def _init_notifier(self):
         """Initialize email notifier.
 
-        Fallback (login/password ONLY): if empty in notification config,
-        reuse SMTP credentials from global transport email config.
-        Host and port are NEVER inherited.
+        Shared mailbox model: if notification SMTP host is empty, falls back to
+        transport email SMTP (same account for saves AND notifications).
+        Credential fallback: login/password from transport if empty in notification config.
         """
         sc = self.config.smtp_config
         tc = self.config.transport_config
@@ -109,13 +109,20 @@ class AppController(QObject):
 
         smtp_host = sc.get("host", "")
         if not smtp_host:
-            self._notifier = None
-            return
+            # Fallback: use transport email SMTP for notifications too
+            smtp_host = ec.get("smtp_host", "")
+            if not smtp_host:
+                self._notifier = None
+                return
 
-        smtp_port = sc.get("port", 587)
+        smtp_port = sc.get("port", 0) or ec.get("smtp_port", 587)
         smtp_user = sc.get("username", "") or ec.get("smtp_user", "")
         smtp_pass = sc.get("password", "") or ec.get("smtp_password", "")
         from_addr = sc.get("from_address", "") or smtp_user
+
+        # Custom notification templates
+        subject_template = sc.get("subject_template", "")
+        body_template = sc.get("body_template", "")
 
         self._notifier = EmailNotifier(
             host=smtp_host,
@@ -124,18 +131,20 @@ class AppController(QObject):
             password=smtp_pass,
             use_tls=sc.get("use_tls", True),
             from_address=from_addr,
+            subject_template=subject_template,
+            body_template=body_template,
         )
 
     def reload_config(self):
         """Reload notifier after settings change."""
         self._init_notifier()
 
-    def download_save(self, game: Game) -> tuple[bool, str]:
+    def download_save(self, game: Game, watcher=None) -> tuple[bool, str]:
         """Download the latest save meant for this player.
 
-        Logic: a save named _SenderName means it was sent BY that player.
-        This player should download saves sent by the PREVIOUS player in turn order.
-        Uses alias mapping to resolve local nick → game player name.
+        Matches by our naming pattern: _{prev_player_name}. in filename.
+        Civ4 saves locally with its own names, but on the server everything
+        uses our standardized pattern: {GameName}_T{turn}_{Sender}.CivBeyondSwordSave
         """
         transport = self._create_transport_for_game(game)
         if not transport:
@@ -144,7 +153,7 @@ class AppController(QObject):
         my_name = self.config.player_name
         my_game_name = game.get_game_player_name(my_name)
 
-        # Find my index in the player list (using game name, not local nick)
+        # Find my index in the player list
         my_index = None
         for i, p in enumerate(game.players):
             if p.name == my_game_name:
@@ -157,7 +166,7 @@ class AppController(QObject):
         prev_index = (my_index - 1) % len(game.players)
         prev_player = game.players[prev_index]
 
-        # Get all saves and filter for ones sent by previous player
+        # Get all saves from remote and match by our pattern
         all_saves = transport.list_files(game.name)
         my_saves = [
             f for f in all_saves
@@ -178,6 +187,10 @@ class AppController(QObject):
         if local_path.exists():
             return True, f"Save juz istnieje: {latest}"
 
+        # Tell watcher to ignore this file
+        if watcher:
+            watcher.ignore_next(str(local_path))
+
         success = transport.download(latest, local_path, game.name)
         if success:
             return True, f"Pobrano: {latest}"
@@ -185,13 +198,16 @@ class AppController(QObject):
             return False, "Blad pobierania"
 
     def download_save_list(self, game: Game) -> list[str]:
-        """Get list of saves available for THIS player (sent by previous player)."""
+        """Get list of saves available for THIS player (sent by previous player).
+        Matches by our pattern: _{prev_player_name}. in filename.
+        """
         transport = self._create_transport_for_game(game)
         if not transport:
             return []
 
         my_name = self.config.player_name
         my_game_name = game.get_game_player_name(my_name)
+
         my_index = None
         for i, p in enumerate(game.players):
             if p.name == my_game_name:
@@ -226,13 +242,17 @@ class AppController(QObject):
             return False, f"Blad pobierania: {filename}"
 
     def upload_save(self, game: Game, local_path: Path) -> tuple[bool, str]:
-        """Upload a save file and advance the turn."""
+        """Upload a save file and advance the turn.
+
+        Renames to our pattern: {GameName}_T{turn}_{SenderGameName}.CivBeyondSwordSave
+        Civ4 saves with its own naming locally, but we upload under our
+        standardized name so download matching works reliably.
+        """
         transport = self._create_transport_for_game(game)
         if not transport:
             return False, "Transport nie jest skonfigurowany dla tej gry"
 
         my_name = self.config.player_name
-        # Use game player name (alias) for filename, not local nick
         my_game_name = game.get_game_player_name(my_name)
         remote_filename = game.get_save_filename(my_name)
 
@@ -568,6 +588,27 @@ class AppController(QObject):
         # Return most recently modified file
         saves.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return saves[0]
+
+    def purge_game_emails(self, game: Game) -> tuple[bool, str]:
+        """Delete all emails associated with a game from the mail server.
+
+        Only works when transport type is 'email'. Deletes messages
+        matching [CIV4PBEM] {game_name} in subject. Does NOT affect
+        other games on the same mailbox.
+
+        Returns (success, message).
+        """
+        transport = self._create_transport_for_game(game)
+        if not transport:
+            return False, "Transport nie jest skonfigurowany"
+
+        if not isinstance(transport, EmailTransport):
+            return False, "Purge dostepny tylko dla transportu email"
+
+        success, count = transport.purge_game(game.name)
+        if success:
+            return True, f"Usunieto {count} maili gry '{game.name}' z serwera"
+        return False, "Blad usuwania maili z serwera"
 
     def launch_civ4_with_save(self, game: Optional[Game] = None) -> tuple[bool, str]:
         """Launch Civ4 BTS with the latest save for a game.

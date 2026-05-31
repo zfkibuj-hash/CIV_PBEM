@@ -39,7 +39,8 @@ CIV_PBEM/
     ├── models/
     │   ├── __init__.py
     │   ├── game.py                  # Game, Player, Turn dataclasses + revert_to_turn() + delete_file()
-    │   └── statistics.py            # GameStats, PlayerStats — calculated from turn history
+    │   ├── statistics.py            # GameStats, PlayerStats — calculated from turn history
+    │   └── turn_calendar.py         # Turn-to-year mapping for all 4 game speeds (Quick/Normal/Epic/Marathon)
     ├── transport/
     │   ├── __init__.py
     │   ├── base.py                  # BaseTransport ABC
@@ -65,9 +66,13 @@ CIV_PBEM/
 - `Player` dataclass: name, email, order
 - `Turn` dataclass: turn_number, player_name, timestamp, filename
 - Games stored as individual JSON files in `%APPDATA%/Civ4PBEMManager/games/`
-- Save filename convention: `{GameName}_T{turn:04d}_{SenderPlayerName}.CivBeyondSwordSave`
-- The sender name is the **game player name** (resolved via alias, NOT necessarily the local nick)
+- Save filename convention on server: `{GameName}_T{turn:04d}_{SenderPlayerName}.CivBeyondSwordSave`
+  - The sender name is the **game player name** (resolved via alias)
+  - Upload RENAMES the file from Civ4's native naming to our pattern
+  - Civ4 locally saves as `GameName_BC-4000_to_NextLeader.CivBeyondSwordSave` — we don't care, we rename on upload
+  - Download matches by `_{prev_player_name}.` in filename
 - `Game.local_player_alias`: maps local config.player_name → game player name (see section 19)
+- `Game.game_speed`: "quick" / "normal" / "epic" / "marathon" — determines turn-to-year mapping
 - `Game.delete_file(directory)` removes the JSON from disk
 
 #### 2. Per-Game Transport Configuration
@@ -148,12 +153,22 @@ CIV_PBEM/
 - Subject: `[CIV4PBEM] {GameName} | {filename}`. IMAP filters by tag + game name
 
 #### 8. Email Notifications (separate from transport)
-- `EmailNotifier` sends "Twoja kolej!" to next player after upload
+- `EmailNotifier` sends "Your turn!" to next player after upload
 - Configurable independently from transport
+- **Shared mailbox model**: if notification SMTP host is empty, automatically uses transport email SMTP credentials (one email account does everything)
+- **Customizable templates** (`subject_template`, `body_template` in smtp config):
+  - Variables: `{game}`, `{turn}`, `{from_player}`, `{to_player}`
+  - Default: English template if not customized
+  - Stored in config under `smtp.subject_template` and `smtp.body_template`
 - **Credential fallback** (login/password ONLY, never host/port):
   - If notification login empty → uses email transport SMTP login
   - If password empty → uses email transport SMTP password
-  - Host and port: NEVER inherited, must be set explicitly
+  - Host and port: fallback to transport email SMTP if notification host empty
+- **Purge game emails** (`EmailTransport.purge_game(game_name)`):
+  - Deletes ALL emails matching `[CIV4PBEM] {game_name}` from mailbox via IMAP
+  - Uses IMAP search + `\Deleted` flag + `expunge()`
+  - Only affects the specific game — other games on same mailbox are safe
+  - `AppController.purge_game_emails(game)` → wrapper that checks transport type
 
 #### 9. GUI (PyQt5)
 
@@ -197,6 +212,12 @@ CIV_PBEM/
   - **auto_send=False** (default): shows popup dialog asking to upload (can minimize fullscreen game!)
   - **auto_send=True**: uploads automatically, only balloon notification (safe for fullscreen play)
 - 5-second deduplication cooldown per file. Daemon thread.
+- **Ignore list** (`ignore_next(filepath)`): files downloaded BY THE APP are excluded from detection
+  - Controller calls `watcher.ignore_next(path)` BEFORE writing a downloaded save
+  - Prevents the "just downloaded turn → watchdog asks to re-upload" loop
+  - Entries auto-expire after 30 seconds (safety against stale entries)
+  - Path normalization (resolve()) ensures consistent matching
+  - Only fires for saves that CIV4 itself creates (player finished turn)
 
 #### 12. Windows Integration
 - `SetCurrentProcessExplicitAppUserModelID` for taskbar icon
@@ -234,6 +255,7 @@ CIV_PBEM/
 - Player alias mapping: local nick ≠ game name → resolved transparently via Game.local_player_alias
 - Remote {GameName}.config sync: first uploader establishes canonical config, all others auto-sync on periodic check
 - Save filename always uses GAME player name (alias-resolved), not local nick
+- Turn calendar: game year displayed alongside turn number everywhere in UI (header, sidebar, history, stats)
 - Window geometry (position + size) saved on close, restored on start (clamped to screen bounds)
 - All QDialog subclasses: remove `WindowContextHelpButtonHint` (the useless "?" button in title bar)
 - Settings dialog: General tab wrapped in QScrollArea for small screens; default size 640×620
@@ -268,12 +290,20 @@ CIV_PBEM/
   - Standard Firaxis install paths
   - Windows Registry: `HKLM\SOFTWARE\WOW6432Node\Valve\Steam` → InstallPath
   - Windows Registry: `HKLM\SOFTWARE\WOW6432Node\Firaxis Games\...` → INSTALLDIR
+- **Save path detection**: `detect_save_path()` checks:
+  - `Documents\My Games\Beyond the Sword\Saves\pbem` (standard)
+  - `Documents\My Games\Beyond the Sword\Saves\multi` and `\hotseat`
+  - OneDrive-synced Documents
+  - Non-English Windows (`Dokumenty`)
+  - Fallback: any `Beyond the Sword\Saves` under home, prefers `\pbem` subfolder
 - **Settings UI**: "Sciezka do Civ4 BTS" field + "Przegladaj..." + "Wykryj automatycznie" buttons
+- **Settings UI**: "Folder save'ow" field + "Przegladaj..." + "Wykryj" buttons
 - **Important**: NO auto-launch on download. Only manual button. Player decides when to launch.
 
 #### 16. Multi-Language / i18n (`src/i18n.py`)
 - Supported: `"pl"` (Polish, default), `"en"` (English)
 - `_TRANSLATIONS` dict: key → {"pl": "...", "en": "..."}. ~200 keys covering full UI.
+- ALL UI strings use `t()` — no hardcoded Polish/English anywhere in main_window.py
 - `I18n` singleton class with `.t(key, **kwargs)` method
 - Module-level shortcut: `from src.i18n import t` → `t("your_turn")`, `t("waiting_for", name="Bob")`
 - `set_language(lang)` — changes global language at runtime
@@ -336,6 +366,30 @@ CIV_PBEM/
 - **Controller**: `download_save()`, `download_save_list()`, `upload_save()` all use alias-resolved name for finding player index, matching saves by sender name, generating filenames
 - **Serialization**: `local_player_alias` saved in game JSON and restored via `from_dict()`
 - **Important**: alias is per-game, per-machine. Same player can have different nicks on different PCs.
+
+#### 21. Turn Calendar / Game Year Display (`src/models/turn_calendar.py`)
+- **Problem**: Civ4 displays game year (e.g. "4000 BC", "1200 AD") but our app only showed turn numbers
+- **Solution**: `turn_calendar.py` maps turn number → game year based on selected speed
+- **Game speed** stored in `Game.game_speed` field, selected in NewGameDialog (QComboBox):
+  - Quick: 330 turns
+  - Normal: 500 turns (default)
+  - Epic: 750 turns
+  - Marathon: 1500 turns
+- **Data structure**: `SPEED_DATA[speed]` = list of `(num_turns, years_per_turn)` tuples per iteration
+  - All speeds start at 4000 BC and end at 2050 AD
+  - Fractional years_per_turn for later eras (0.5 = 2 turns/year, 0.25 = 4 turns/year)
+- **API**:
+  - `turn_to_year(turn, speed)` → float (negative=BC, positive=AD)
+  - `format_game_year(year)` → "4000 BC" / "100 AD"
+  - `turn_to_year_str(turn, speed)` → combined helper
+  - `get_total_turns(speed)` → int
+- **Displayed in UI** (always alongside turn number):
+  - Game view header: "GameName - Turn 50 (1000 BC)"
+  - Sidebar game list: "[Turn 50, 1000 BC]"
+  - History list: "... → Turn 50 (1000 BC) [filename]"
+  - Statistics dialog: "Current round: 50 (1000 BC)"
+- **NewGameDialog**: speed selector dropdown with total turns shown
+- **Export (.civ4pbem)**: game_speed included so imported games show correct years
 
 #### 20. Remote Config Sync (`{GameName}.config` on server)
 - **Problem**: if players set different transport configs (wrong host, port, folder), saves end up in wrong places and game breaks after first round.

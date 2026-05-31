@@ -53,6 +53,8 @@ class Game:
     # Local player alias: maps local config.player_name → game player name
     # e.g. local nick "kiroman" maps to game player "K4arol"
     local_player_alias: str = ""
+    # Game speed: determines turn-to-year mapping (quick/normal/epic/marathon)
+    game_speed: str = "normal"
 
     @property
     def current_player(self) -> Optional[Player]:
@@ -153,6 +155,7 @@ class Game:
             "transport_config": self.transport_config,
             "admin_password": self.admin_password,
             "local_player_alias": self.local_player_alias,
+            "game_speed": self.game_speed,
         }
 
     @classmethod
@@ -169,6 +172,7 @@ class Game:
             transport_config=data.get("transport_config", {}),
             admin_password=data.get("admin_password", ""),
             local_player_alias=data.get("local_player_alias", ""),
+            game_speed=data.get("game_speed", "normal"),
         )
 
     def save_to_file(self, directory: Path):

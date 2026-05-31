@@ -137,6 +137,10 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Ustawienia",
         "en": "Settings",
     },
+    "settings_appearance": {
+        "pl": "Wyglad i jezyk",
+        "en": "Appearance & language",
+    },
     "tab_general": {
         "pl": "Ogolne",
         "en": "General",
@@ -148,6 +152,10 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "tab_notifications": {
         "pl": "Powiadomienia",
         "en": "Notifications",
+    },
+    "tab_security": {
+        "pl": "Bezpieczenstwo",
+        "en": "Security",
     },
     "player_name": {
         "pl": "Twoja nazwa:",
@@ -210,6 +218,10 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "game_name": {
         "pl": "Nazwa gry:",
         "en": "Game name:",
+    },
+    "game_speed": {
+        "pl": "Predkosc gry:",
+        "en": "Game speed:",
     },
     "game_name_placeholder": {
         "pl": "np. WojnaSwiatowa",
@@ -507,6 +519,14 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Civ4 juz jest uruchomiony",
         "en": "Civ4 is already running",
     },
+    "civ4_leader_name": {
+        "pl": "Nazwa lidera Civ4 (jak w save):",
+        "en": "Civ4 leader name (as in save file):",
+    },
+    "civ4_leader_placeholder": {
+        "pl": "np. Zara_Yaqob, Montezuma, Washington",
+        "en": "e.g. Zara_Yaqob, Montezuma, Washington",
+    },
     "civ4_detected": {
         "pl": "Wykryto Civ4: {path}",
         "en": "Civ4 detected: {path}",
@@ -514,6 +534,14 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "civ4_not_detected": {
         "pl": "Nie wykryto Civ4 automatycznie. Wskazz reczne.",
         "en": "Civ4 not auto-detected. Please set manually.",
+    },
+    "save_path_detected": {
+        "pl": "Wykryto folder save: {path}",
+        "en": "Save folder detected: {path}",
+    },
+    "save_path_not_detected": {
+        "pl": "Nie wykryto folderu save automatycznie. Wskazz reczne.",
+        "en": "Save folder not auto-detected. Please set manually.",
     },
 
     # --- Import/Export ---

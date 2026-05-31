@@ -20,7 +20,8 @@ from src.config import AppConfig
 from src.models.game import Game, Player
 from src.i18n import t, get_i18n, set_language, LANGUAGES
 from src.models.statistics import calculate_game_stats, format_duration
-from src.launcher import detect_civ4_path, launch_civ4, is_civ4_running
+from src.models.turn_calendar import turn_to_year_str
+from src.launcher import detect_civ4_path, detect_save_path, launch_civ4, is_civ4_running
 
 logger = logging.getLogger(__name__)
 
@@ -377,7 +378,7 @@ class MainWindow(QMainWindow):
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(8, 12, 8, 8)
 
-        lbl_games = QLabel("MOJE GRY")
+        lbl_games = QLabel(t("my_games"))
         lbl_games.setStyleSheet("color: #9e9e9e; font-size: 9pt; font-weight: bold;")
         sidebar_layout.addWidget(lbl_games)
 
@@ -385,24 +386,24 @@ class MainWindow(QMainWindow):
         self.game_list.currentRowChanged.connect(self._on_game_selected)
         sidebar_layout.addWidget(self.game_list)
 
-        btn_new_game = QPushButton("+ Nowa gra")
+        btn_new_game = QPushButton(t("new_game"))
         btn_new_game.clicked.connect(self._on_new_game)
         sidebar_layout.addWidget(btn_new_game)
 
-        self.btn_import_game = QPushButton("Importuj gre...")
+        self.btn_import_game = QPushButton(t("import_game"))
         self.btn_import_game.clicked.connect(self._on_import_game)
         sidebar_layout.addWidget(self.btn_import_game)
 
-        self.btn_export_game = QPushButton("Eksportuj gre...")
+        self.btn_export_game = QPushButton(t("export_game"))
         self.btn_export_game.clicked.connect(self._on_export_game)
         sidebar_layout.addWidget(self.btn_export_game)
 
-        self.btn_delete_game = QPushButton("Usun gre")
+        self.btn_delete_game = QPushButton(t("delete_game"))
         self.btn_delete_game.setStyleSheet("color: #ef5350;")
         self.btn_delete_game.clicked.connect(self._on_delete_game)
         sidebar_layout.addWidget(self.btn_delete_game)
 
-        self.btn_game_transport = QPushButton("Transport gry...")
+        self.btn_game_transport = QPushButton(t("game_transport"))
         self.btn_game_transport.clicked.connect(self._on_game_transport)
         sidebar_layout.addWidget(self.btn_game_transport)
 
@@ -410,7 +411,7 @@ class MainWindow(QMainWindow):
         self.btn_stats.clicked.connect(self._on_statistics)
         sidebar_layout.addWidget(self.btn_stats)
 
-        btn_settings = QPushButton("Ustawienia")
+        btn_settings = QPushButton(t("settings"))
         btn_settings.clicked.connect(self._on_settings)
         sidebar_layout.addWidget(btn_settings)
 
@@ -423,7 +424,7 @@ class MainWindow(QMainWindow):
         right_layout.setSpacing(0)
 
         # Header
-        self.header_label = QLabel("Wybierz gre z listy")
+        self.header_label = QLabel(t("select_game"))
         self.header_label.setStyleSheet(
             "background-color: #2d2d2d; padding: 12px 20px; "
             "font-size: 12pt; font-weight: bold;"
@@ -449,24 +450,24 @@ class MainWindow(QMainWindow):
 
         # Action buttons
         actions_layout = QHBoxLayout()
-        self.btn_download = QPushButton("Pobierz save")
+        self.btn_download = QPushButton(t("download_save"))
         self.btn_download.setObjectName("btn_download")
         self.btn_download.clicked.connect(self._on_download)
         self.btn_download.setMinimumHeight(44)
         actions_layout.addWidget(self.btn_download)
 
-        self.btn_upload = QPushButton("Wyslij moj save")
+        self.btn_upload = QPushButton(t("upload_save"))
         self.btn_upload.setObjectName("btn_upload")
         self.btn_upload.clicked.connect(self._on_upload)
         self.btn_upload.setMinimumHeight(44)
         actions_layout.addWidget(self.btn_upload)
 
-        self.btn_open_folder = QPushButton("Otworz folder")
+        self.btn_open_folder = QPushButton(t("open_folder"))
         self.btn_open_folder.clicked.connect(self._on_open_folder)
         self.btn_open_folder.setMinimumHeight(44)
         actions_layout.addWidget(self.btn_open_folder)
 
-        self.btn_check_now = QPushButton("Sprawdz teraz")
+        self.btn_check_now = QPushButton(t("check_now"))
         self.btn_check_now.clicked.connect(self._on_manual_check)
         self.btn_check_now.setMinimumHeight(44)
         actions_layout.addWidget(self.btn_check_now)
@@ -480,13 +481,13 @@ class MainWindow(QMainWindow):
         content_layout.addLayout(actions_layout)
 
         # History - clickable list for turn revert
-        history_group = QGroupBox("Historia tur (kliknij aby przywrocic)")
+        history_group = QGroupBox(t("history_group"))
         history_layout = QVBoxLayout(history_group)
         self.history_list = QListWidget()
         self.history_list.setMaximumHeight(160)
         history_layout.addWidget(self.history_list)
 
-        self.btn_revert = QPushButton("Przywroc zaznaczona ture")
+        self.btn_revert = QPushButton(t("revert_selected"))
         self.btn_revert.setStyleSheet("color: #ff9800; border-color: #ff9800;")
         self.btn_revert.clicked.connect(self._on_revert_turn)
         history_layout.addWidget(self.btn_revert)
@@ -497,7 +498,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(content)
 
         # Status bar
-        self.status_label = QLabel("Gotowy")
+        self.status_label = QLabel(t("ready"))
         self.status_label.setObjectName("status_bar")
         right_layout.addWidget(self.status_label)
 
@@ -533,12 +534,13 @@ class MainWindow(QMainWindow):
         my_name = self.config.player_name
         for game in self.games:
             is_my_turn = game.is_my_turn(my_name)
+            year_str = turn_to_year_str(game.current_turn, game.game_speed)
             if is_my_turn:
-                text = f">> {game.name} [Tura {game.current_turn}]\n   TWOJA KOLEJ!"
+                text = f">> {game.name} [{t('turn')} {game.current_turn}, {year_str}]\n   {t('your_turn')}"
             else:
                 cp = game.current_player
                 who = cp.name if cp else "?"
-                text = f"   {game.name} [Tura {game.current_turn}]\n   Czeka: {who}"
+                text = f"   {game.name} [{t('turn')} {game.current_turn}, {year_str}]\n   {t('waiting')}: {who}"
             item = QListWidgetItem(text)
             if is_my_turn:
                 item.setForeground(QColor("#66bb6a"))
@@ -558,15 +560,15 @@ class MainWindow(QMainWindow):
 
         my_name = self.config.player_name
 
-        self.header_label.setText(f"{game.name}  -  Tura {game.current_turn}")
+        self.header_label.setText(f"{game.name}  -  {t('turn')} {game.current_turn} ({turn_to_year_str(game.current_turn, game.game_speed)})")
 
         if game.is_my_turn(my_name):
-            self.status_banner.setText("  TWOJA KOLEJ! Save jest gotowy do pobrania.")
+            self.status_banner.setText(t("your_turn_banner"))
             self.status_banner.setObjectName("banner_your_turn")
         else:
             cp = game.current_player
             who = cp.name if cp else "?"
-            self.status_banner.setText(f"  Czeka na: {who}")
+            self.status_banner.setText(t("waiting_for", name=who))
             self.status_banner.setObjectName("banner_waiting")
         # Force style refresh
         self.status_banner.setStyleSheet(self.status_banner.styleSheet())
@@ -574,10 +576,10 @@ class MainWindow(QMainWindow):
         self.status_banner.style().polish(self.status_banner)
 
         # Players
-        players_text = "Kolejnosc graczy: "
+        players_text = t("player_order")
         parts = []
         for p in game.players:
-            marker = " (Ty)" if p.name == my_name else ""
+            marker = t("you_marker") if p.name == my_name else ""
             arrow_marker = " <<" if p.name == game.current_player.name else ""
             parts.append(f"{p.name}{marker}{arrow_marker}")
         players_text += " -> ".join(parts)
@@ -592,7 +594,7 @@ class MainWindow(QMainWindow):
             cp_name = game.current_player.name if game.current_player else "?"
             self.players_label.setText(
                 f"{players_text}\n"
-                f"{cp_name} gra juz: {elapsed_str}"
+                f"{t('playing_since', name=cp_name, time=elapsed_str)}"
             )
 
         # History
@@ -600,7 +602,8 @@ class MainWindow(QMainWindow):
         for turn in reversed(game.history[-20:]):
             import datetime
             dt = datetime.datetime.fromtimestamp(turn.timestamp)
-            text = f"{dt.strftime('%d.%m %H:%M')}  {turn.player_name} -> tura {turn.turn_number}  [{turn.filename}]"
+            year_str = turn_to_year_str(turn.turn_number, game.game_speed)
+            text = f"{dt.strftime('%d.%m %H:%M')}  {turn.player_name} -> {t('turn')} {turn.turn_number} ({year_str})  [{turn.filename}]"
             item = QListWidgetItem(text)
             # Store the history index as user data
             idx = game.history.index(turn)
@@ -637,7 +640,7 @@ class MainWindow(QMainWindow):
     def _on_export_game(self):
         """Export current game config to a .civ4pbem file for sharing with other players."""
         if not self.current_game:
-            QMessageBox.information(self, "Info", "Zaznacz gre do eksportu.")
+            QMessageBox.information(self, t("info"), t("select_game_to_export"))
             return
 
         game = self.current_game
@@ -657,7 +660,7 @@ class MainWindow(QMainWindow):
         if filepath:
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False)
-            self.status_label.setText(f"Wyeksportowano: {filepath}")
+            self.status_label.setText(t("exported", path=filepath))
 
     def _on_import_game(self):
         """Import a game from a .civ4pbem file shared by another player."""
@@ -675,15 +678,15 @@ class MainWindow(QMainWindow):
 
             name = data.get("name", "")
             if not name:
-                QMessageBox.warning(self, "Blad", "Plik nie zawiera nazwy gry.")
+                QMessageBox.warning(self, t("error"), t("import_error", error="No game name"))
                 return
 
             # Check for duplicate
             for g in self.games:
                 if g.name == name:
                     reply = QMessageBox.question(
-                        self, "Gra juz istnieje",
-                        f"Gra '{name}' juz istnieje. Nadpisac?",
+                        self, t("info"),
+                        t("game_exists_overwrite", name=name),
                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
                     )
                     if reply != QMessageBox.Yes:
@@ -753,22 +756,21 @@ class MainWindow(QMainWindow):
             game.save_to_file(get_games_dir())
             self.games.append(game)
             self._refresh_game_list()
-            self.status_label.setText(f"Zaimportowano gre: {name} (gracz: {chosen_name})")
+            self.status_label.setText(t("imported", name=f"{name} ({chosen_name})"))
 
         except Exception as e:
-            QMessageBox.warning(self, "Blad importu", f"Nie udalo sie zaimportowac:\n{e}")
+            QMessageBox.warning(self, t("error"), t("import_error", error=str(e)))
 
     def _on_delete_game(self):
         """Delete the currently selected game."""
         if not self.current_game:
-            QMessageBox.information(self, "Info", "Zaznacz gre do usuniecia.")
+            QMessageBox.information(self, t("info"), t("select_game_to_delete"))
             return
 
         reply = QMessageBox.warning(
             self,
-            "Usuwanie gry",
-            f"Czy na pewno chcesz usunac gre '{self.current_game.name}'?\n\n"
-            f"Ta operacja jest nieodwracalna!",
+            t("delete_game_title"),
+            t("delete_game_confirm", name=self.current_game.name),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -779,7 +781,7 @@ class MainWindow(QMainWindow):
     def _on_game_transport(self):
         """Open transport configuration dialog for the current game."""
         if not self.current_game:
-            QMessageBox.information(self, "Info", "Zaznacz gre aby skonfigurowac transport.")
+            QMessageBox.information(self, t("info"), t("select_game_for_transport"))
             return
 
         dialog = GameTransportDialog(self.config, self.current_game, self.games, self)
@@ -788,7 +790,7 @@ class MainWindow(QMainWindow):
             self.current_game.transport_config = tc
             from src.config import get_games_dir
             self.current_game.save_to_file(get_games_dir())
-            self.status_label.setText(f"Transport gry '{self.current_game.name}' zapisany.")
+            self.status_label.setText(t("transport_saved", name=self.current_game.name))
 
     settings_saved = pyqtSignal()
 
@@ -825,11 +827,11 @@ class MainWindow(QMainWindow):
         """Download save from remote."""
         if not self.current_game:
             return
-        self.status_label.setText("Pobieranie save'a...")
+        self.status_label.setText(t("downloading"))
         QApplication.processEvents()
 
         # This will be connected to the actual transport in the app controller
-        self.status_label.setText("Pobieranie - uzyj kontrolera aplikacji")
+        self.status_label.setText(t("downloading"))
 
     def _on_upload(self):
         """Upload save to remote."""
@@ -903,7 +905,7 @@ class MainWindow(QMainWindow):
 
     def _on_manual_check(self):
         """Manual check triggered by the user - checks and resets timer."""
-        self.status_label.setText("Sprawdzanie nowych save'ow...")
+        self.status_label.setText(t("checking_saves"))
         QApplication.processEvents()
         # Reset the periodic timer so the next auto-check is a full interval away
         self.check_timer.stop()
@@ -958,9 +960,9 @@ class MainWindow(QMainWindow):
 
     def _on_check_timer(self):
         """Periodic check for new saves."""
-        self.status_label.setText("Sprawdzanie nowych save'ow...")
+        self.status_label.setText(t("checking_saves"))
         # This will be implemented by app controller
-        QTimer.singleShot(2000, lambda: self.status_label.setText("Gotowy"))
+        QTimer.singleShot(2000, lambda: self.status_label.setText(t("ready")))
 
     def closeEvent(self, event):
         """Close button (X) always quits the application. Saves geometry."""
@@ -991,7 +993,7 @@ class NewGameDialog(QDialog):
     def __init__(self, config: AppConfig, parent=None):
         super().__init__(parent)
         self.config = config
-        self.setWindowTitle("Nowa gra")
+        self.setWindowTitle(t("new_game_title"))
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setMinimumWidth(450)
         self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
@@ -1009,6 +1011,15 @@ class NewGameDialog(QDialog):
         self.admin_password_edit.setPlaceholderText("haslo do usuwania save'ow (opcjonalne)")
         self.admin_password_edit.setEchoMode(QLineEdit.Password)
         form.addRow("Haslo admina:", self.admin_password_edit)
+
+        # Game speed selector
+        self.speed_combo = QComboBox()
+        self.speed_combo.addItem("Quick (330 tur)", "quick")
+        self.speed_combo.addItem("Normal (500 tur)", "normal")
+        self.speed_combo.addItem("Epic (750 tur)", "epic")
+        self.speed_combo.addItem("Marathon (1500 tur)", "marathon")
+        self.speed_combo.setCurrentIndex(1)  # Default: Normal
+        form.addRow(t("game_speed"), self.speed_combo)
 
         layout.addLayout(form)
 
@@ -1087,6 +1098,7 @@ class NewGameDialog(QDialog):
             name=name,
             players=players,
             admin_password=self.admin_password_edit.text().strip(),
+            game_speed=self.speed_combo.currentData(),
         )
 
 
@@ -1096,7 +1108,7 @@ class SettingsDialog(QDialog):
     def __init__(self, config: AppConfig, parent=None):
         super().__init__(parent)
         self.config = config
-        self.setWindowTitle("Ustawienia")
+        self.setWindowTitle(t("settings_title"))
         # Remove the "?" button from title bar (useless, confuses users)
         self.setWindowFlags(
             self.windowFlags() & ~Qt.WindowContextHelpButtonHint
@@ -1111,10 +1123,10 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         tabs = QTabWidget()
-        tabs.addTab(self._create_general_tab(), "Ogolne")
-        tabs.addTab(self._create_transport_tab(), "Transport")
-        tabs.addTab(self._create_notifications_tab(), "Powiadomienia")
-        tabs.addTab(self._create_security_tab(), "Bezpieczenstwo")
+        tabs.addTab(self._create_general_tab(), t("tab_general"))
+        tabs.addTab(self._create_transport_tab(), t("tab_transport"))
+        tabs.addTab(self._create_notifications_tab(), t("tab_notifications"))
+        tabs.addTab(self._create_security_tab(), t("tab_security"))
         layout.addWidget(tabs)
 
         # Buttons at the bottom (always visible)
@@ -1138,47 +1150,46 @@ class SettingsDialog(QDialog):
         layout.setSpacing(10)
 
         # Player info
-        player_group = QGroupBox("Gracz")
+        player_group = QGroupBox(t("stats_player_name"))
         player_form = QFormLayout(player_group)
         self.player_name_edit = QLineEdit(self.config.player_name)
-        player_form.addRow("Twoja nazwa:", self.player_name_edit)
+        player_form.addRow(t("player_name"), self.player_name_edit)
         self.player_email_edit = QLineEdit(self.config.player_email)
-        player_form.addRow("Twoj email:", self.player_email_edit)
+        player_form.addRow(t("player_email"), self.player_email_edit)
         layout.addWidget(player_group)
 
         # Save path
-        path_group = QGroupBox("Folder save'ow Civ4")
+        path_group = QGroupBox(t("save_path"))
         path_layout = QHBoxLayout(path_group)
         self.path_edit = QLineEdit(self.config.save_path)
         path_layout.addWidget(self.path_edit)
-        btn_browse = QPushButton("Zmien...")
+        btn_browse = QPushButton(t("browse"))
         btn_browse.clicked.connect(self._browse_path)
         path_layout.addWidget(btn_browse)
+        btn_detect_saves = QPushButton(t("detect_civ4"))
+        btn_detect_saves.clicked.connect(self._detect_save_path)
+        path_layout.addWidget(btn_detect_saves)
         layout.addWidget(path_group)
 
         # Check interval
-        interval_group = QGroupBox("Sprawdzanie")
+        interval_group = QGroupBox(t("check_interval"))
         interval_form = QFormLayout(interval_group)
         self.check_interval = QSpinBox()
         self.check_interval.setRange(1, 60)
         self.check_interval.setValue(self.config.check_interval_minutes)
         self.check_interval.setSuffix(" min")
-        interval_form.addRow("Sprawdzaj co:", self.check_interval)
+        interval_form.addRow(t("check_interval"), self.check_interval)
         layout.addWidget(interval_group)
 
         # Appearance & Language
-        appearance_group = QGroupBox("Wyglad i jezyk")
+        appearance_group = QGroupBox(t("settings_appearance"))
         appearance_form = QFormLayout(appearance_group)
-        self.dark_mode_check = QCheckBox("Tryb ciemny")
+        self.dark_mode_check = QCheckBox(t("dark_mode"))
         self.dark_mode_check.setChecked(self.config.get("dark_mode", True))
         appearance_form.addRow(self.dark_mode_check)
 
-        self.auto_send_check = QCheckBox("Auto-wyslij save (bez pytania, dla fullscreen)")
+        self.auto_send_check = QCheckBox(t("auto_send"))
         self.auto_send_check.setChecked(self.config.get("auto_send", False))
-        self.auto_send_check.setToolTip(
-            "Gdy wlaczone: wykryty nowy save zostanie wyslany automatycznie\n"
-            "(tylko powiadomienie balloon, bez popup ktory minimalizuje gre)"
-        )
         appearance_form.addRow(self.auto_send_check)
 
         # Language selector
@@ -1531,6 +1542,16 @@ class SettingsDialog(QDialog):
         if path:
             self.path_edit.setText(path)
 
+    def _detect_save_path(self):
+        """Auto-detect Civ4 BTS save folder by checking common locations."""
+        from src.launcher import detect_save_path
+        detected = detect_save_path()
+        if detected:
+            self.path_edit.setText(detected)
+            QMessageBox.information(self, "OK", t("save_path_detected", path=detected))
+        else:
+            QMessageBox.information(self, t("info"), t("save_path_not_detected"))
+
     def _browse_civ4_path(self):
         """Browse for Civ4 BTS executable."""
         filepath, _ = QFileDialog.getOpenFileName(
@@ -1879,7 +1900,9 @@ class GameStatsDialog(QDialog):
 
         overview_form.addRow(t("stats_game_started"), QLabel(stats.game_started_formatted))
         overview_form.addRow(t("stats_last_activity"), QLabel(stats.last_activity_formatted))
-        overview_form.addRow(t("stats_current_round"), QLabel(str(stats.current_round)))
+        overview_form.addRow(t("stats_current_round"), QLabel(
+            f"{stats.current_round} ({turn_to_year_str(stats.current_round, self.game.game_speed)})"
+        ))
         overview_form.addRow(t("stats_total_turns"), QLabel(str(stats.total_turns)))
         overview_form.addRow(t("stats_total_time"), QLabel(stats.total_time_formatted))
         overview_form.addRow(t("stats_avg_turn_time"), QLabel(stats.avg_turn_time_formatted))
