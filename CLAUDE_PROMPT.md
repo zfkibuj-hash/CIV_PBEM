@@ -284,7 +284,14 @@ CIV_PBEM/
   - Standard Firaxis install paths
   - Windows Registry: `HKLM\SOFTWARE\WOW6432Node\Valve\Steam` → InstallPath
   - Windows Registry: `HKLM\SOFTWARE\WOW6432Node\Firaxis Games\...` → INSTALLDIR
+- **Save path detection**: `detect_save_path()` checks:
+  - `Documents\My Games\Beyond the Sword\Saves\pbem` (standard)
+  - `Documents\My Games\Beyond the Sword\Saves\multi` and `\hotseat`
+  - OneDrive-synced Documents
+  - Non-English Windows (`Dokumenty`)
+  - Fallback: any `Beyond the Sword\Saves` under home, prefers `\pbem` subfolder
 - **Settings UI**: "Sciezka do Civ4 BTS" field + "Przegladaj..." + "Wykryj automatycznie" buttons
+- **Settings UI**: "Folder save'ow" field + "Przegladaj..." + "Wykryj" buttons
 - **Important**: NO auto-launch on download. Only manual button. Player decides when to launch.
 
 #### 16. Multi-Language / i18n (`src/i18n.py`)
