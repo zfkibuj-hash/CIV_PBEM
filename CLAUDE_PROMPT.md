@@ -173,12 +173,14 @@ CIV_PBEM/
 - "Pobierz save" (green), "Wyslij moj save" (blue), "Otworz folder", "Sprawdz teraz"
 - "Sprawdz teraz": checks remote + resets periodic timer
 
-##### Settings Dialog (3 tabs: Ogolne, Transport, Powiadomienia)
-- **Ogolne**: player name, email, save path, check interval, dark mode checkbox, **auto-send checkbox**
+##### Settings Dialog (4 tabs: Ogolne, Transport, Powiadomienia, Bezpieczenstwo)
+- **Ogolne** (scrollable): player name, email, save path, check interval, dark mode checkbox, **auto-send checkbox**, **language selector** (Polski/English), **Civ4 BTS path** (browse + auto-detect)
   - Auto-send: "Auto-wyslij save (bez pytania, dla fullscreen)" — when ON, watchdog uploads automatically with balloon only (no popup that would minimize Civ4 in fullscreen)
-- **Transport**: global/default transport config (used as template for new games via "Kopiuj z domyslnych"). Orange warning: "Nie uzywaj prywatnego maila!"
-- **Powiadomienia**: SMTP for notifications. Placeholders: "puste = z transportu email"
-- After save: emits `settings_saved` signal → `controller.reload_config()`
+- **Transport**: global/default transport config (used as template for new games via "Kopiuj z domyslnych"). Orange warning: "Nie uzywaj prywatnego maila!" Shows lock icon if config encrypted and locked.
+- **Powiadomienia**: SMTP for notifications. Placeholders: "puste = z transportu email". Shows lock icon if locked.
+- **Bezpieczenstwo**: encryption status, set/change master password (with confirmation), info text
+- After save: emits `settings_saved` signal → `controller.reload_config()` + `_refresh_ui_language()`
+- All dialogs: `WindowContextHelpButtonHint` removed (no "?" button), sized generously, use `get_style_for_theme()`
 
 #### 10. System Tray
 - Context menu: "Pokaz okno", "Sprawdz teraz", "Zamknij"
@@ -205,7 +207,7 @@ CIV_PBEM/
 
 #### 13. Config
 - `%APPDATA%/Civ4PBEMManager/config.json`
-- Keys: save_path, check_interval_minutes, dark_mode, auto_send, player_name, player_email, transport (global/default), smtp, **language** ("pl"/"en"), **civ4_path** (path to .exe)
+- Keys: save_path, check_interval_minutes, dark_mode, auto_send, player_name, player_email, transport (global/default), smtp, **language** ("pl"/"en"), **civ4_path** (path to .exe), **window_geometry** ({x, y, width, height})
 - `AppConfig` class with auto-save on change
 - Games dir: `%APPDATA%/Civ4PBEMManager/games/`
 
@@ -228,9 +230,14 @@ CIV_PBEM/
 - Single-instance: only one copy of the app can run at a time
 - "Uruchom Civ4" button: manual launch, loads latest save, prevents duplicate Civ4 instances
 - Language stored in config, i18n.t() used for all UI strings
+- Language change: after save, `_refresh_ui_language()` updates all button/label texts immediately (no restart)
 - Player alias mapping: local nick ≠ game name → resolved transparently via Game.local_player_alias
 - Remote {GameName}.config sync: first uploader establishes canonical config, all others auto-sync on periodic check
 - Save filename always uses GAME player name (alias-resolved), not local nick
+- Window geometry (position + size) saved on close, restored on start (clamped to screen bounds)
+- All QDialog subclasses: remove `WindowContextHelpButtonHint` (the useless "?" button in title bar)
+- Settings dialog: General tab wrapped in QScrollArea for small screens; default size 640×620
+- Main window default size: 900×650 (minimum 800×600)
 
 ### NEW FEATURES (v1.1)
 
@@ -272,6 +279,7 @@ CIV_PBEM/
 - `set_language(lang)` — changes global language at runtime
 - **Settings**: language combo (Polski/English) in Ogolne tab
 - **Startup**: `main.py` calls `set_language(config.language)` before creating window
+- **Runtime refresh**: after language change, `MainWindow._refresh_ui_language()` updates all buttons, labels, status bar, game view — NO restart needed
 - Format strings supported: `t("playing_since", name="Alice", time="2h 15m")`
 - Missing key returns `"[key_name]"` for debugging
 
