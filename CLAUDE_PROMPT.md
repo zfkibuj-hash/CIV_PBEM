@@ -61,12 +61,13 @@ CIV_PBEM/
 ### Core Features
 
 #### 1. Multi-Game Support
-- `Game` dataclass: name, players, current_turn, current_player_index, history, **transport_config**
+- `Game` dataclass: name, players, current_turn, current_player_index, history, **transport_config**, **local_player_alias**
 - `Player` dataclass: name, email, order
 - `Turn` dataclass: turn_number, player_name, timestamp, filename
 - Games stored as individual JSON files in `%APPDATA%/Civ4PBEMManager/games/`
 - Save filename convention: `{GameName}_T{turn:04d}_{SenderPlayerName}.CivBeyondSwordSave`
-- The sender name is the **player who FINISHED their turn** (configured in settings as "Twoja nazwa")
+- The sender name is the **game player name** (resolved via alias, NOT necessarily the local nick)
+- `Game.local_player_alias`: maps local config.player_name → game player name (see section 19)
 - `Game.delete_file(directory)` removes the JSON from disk
 
 #### 2. Per-Game Transport Configuration
@@ -109,8 +110,9 @@ CIV_PBEM/
   - `transport_config`: full transport settings for this game
 - **Import**: "Importuj gre..." button in sidebar → opens `.civ4pbem` file, creates game locally
   - Checks for duplicate game name (offers to overwrite)
+  - **Player identity dialog**: asks "Which player are you?" from list + confirms email (see section 19)
   - Player who sets up the game exports the file and sends it (email, Discord, etc.) to all players
-  - Each player imports and has identical game config + transport ready to go
+  - Each player imports, picks their identity, and has identical game config + transport ready to go
 
 #### 5. Upload Confirmation (Turn Order Advisory)
 - Upload does NOT block based on turn order — user decides when to send
@@ -226,6 +228,9 @@ CIV_PBEM/
 - Single-instance: only one copy of the app can run at a time
 - "Uruchom Civ4" button: manual launch, loads latest save, prevents duplicate Civ4 instances
 - Language stored in config, i18n.t() used for all UI strings
+- Player alias mapping: local nick ≠ game name → resolved transparently via Game.local_player_alias
+- Remote {GameName}.config sync: first uploader establishes canonical config, all others auto-sync on periodic check
+- Save filename always uses GAME player name (alias-resolved), not local nick
 
 ### NEW FEATURES (v1.1)
 
@@ -306,6 +311,50 @@ CIV_PBEM/
 - **Backwards compatible**: if no encrypted section in config.json (legacy/first run), behaves as unlocked with plain data. Encryption activates only after user sets master password.
 - **Crypto module** (`src/crypto.py`): `encrypt_data(dict, password) → blob`, `decrypt_data(blob, password) → dict|None`, `verify_password(blob, password) → bool`
 - **Dependency**: `cryptography>=41.0` added to requirements.txt
+
+#### 19. Player Alias Mapping (`Game.local_player_alias`)
+- **Problem**: player's local nick (e.g. "kiroman") ≠ game player name (e.g. "K4arol"). Causes mismatches in is_my_turn(), save filenames, download logic.
+- **Solution**: `Game.local_player_alias` field — stores the GAME player name this local user maps to
+- **On import (.civ4pbem)**:
+  1. `QInputDialog.getItem()`: "Ktorym graczem z listy jestes?" — shows all player names from game
+  2. User picks their game identity (e.g. "K4arol")
+  3. `QInputDialog.getText()`: "Potwierdz email" — confirms/updates notification email
+  4. If chosen_name ≠ config.player_name → `game.local_player_alias = chosen_name`
+  5. If names match → alias stays empty (no mapping needed)
+- **`Game.get_game_player_name(local_name)`**: resolves local nick → game name via alias. If alias set, always returns alias. If empty, returns local_name as-is.
+- **`Game.get_my_player(local_name)`**: returns the Player object for the local user (resolving alias)
+- **`Game.is_my_turn(my_name)`**: uses `get_game_player_name()` to compare with `current_player.name`
+- **`Game.get_save_filename(player_name)`**: uses resolved game name in filename (NOT local nick!)
+- **Controller**: `download_save()`, `download_save_list()`, `upload_save()` all use alias-resolved name for finding player index, matching saves by sender name, generating filenames
+- **Serialization**: `local_player_alias` saved in game JSON and restored via `from_dict()`
+- **Important**: alias is per-game, per-machine. Same player can have different nicks on different PCs.
+
+#### 20. Remote Config Sync (`{GameName}.config` on server)
+- **Problem**: if players set different transport configs (wrong host, port, folder), saves end up in wrong places and game breaks after first round.
+- **Solution**: shared `{GameName}.config` file uploaded to the remote transport (FTP/SFTP/WebDAV/Email folder)
+- **File format** (JSON):
+  ```json
+  {
+    "civ4pbem_config_version": "1.0",
+    "name": "GameName",
+    "players": [...],
+    "transport_config": {...},
+    "admin_password": "..."
+  }
+  ```
+- **Upload**: `AppController.upload_game_config(game)` — serializes game config to temp file, uploads as `{GameName}.config`
+- **Auto-upload**: first player to upload a save also creates `.config` if it doesn't exist yet (`transport.file_exists()` check in `upload_save()`)
+- **Download**: `AppController.download_game_config(game)` → returns `(success, msg, data_dict)`
+- **Auto-sync**: `_sync_game_state()` (called on every periodic check) also downloads `.config` and **auto-updates local transport_config** if remote version differs. This ensures all players converge on the same settings.
+- **Verify**: `AppController.verify_game_config(game)` → downloads remote config, compares:
+  - Player names (missing/extra players)
+  - Transport type and host
+  - Returns `(all_ok: bool, warnings: list[str])`
+- **Design decisions**:
+  - First uploader = authoritative config source (game creator)
+  - Config is NOT encrypted on server (all players need to read it)
+  - Transport config in .config overrides local on sync (remote wins)
+  - Only transport_config synced, NOT local_player_alias (that's per-machine)
 
 ### Output Requirements
 Generate ALL files listed in the project structure. The result should be:
