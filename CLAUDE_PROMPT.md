@@ -33,6 +33,7 @@ CIV_PBEM/
 └── src/
     ├── __init__.py
     ├── config.py                    # AppConfig class, JSON-based, stored in %APPDATA%/Civ4PBEMManager/
+    ├── crypto.py                    # AES-256 encryption (Fernet + PBKDF2), encrypt/decrypt/verify
     ├── i18n.py                      # Internationalization module (PL/EN, ~200 keys, runtime switching)
     ├── launcher.py                  # Civ4 BTS detection (Steam/GOG/registry) + launch with save
     ├── models/
@@ -277,6 +278,34 @@ CIV_PBEM/
 - **Linux/Mac**: `fcntl.flock(LOCK_EX | LOCK_NB)` on `~/.config/Civ4PBEMManager/.lock`
 - If duplicate detected: shows bilingual QMessageBox warning and calls `sys.exit(0)`
 - Message: "Program jest juz uruchomiony! / Application is already running! / Sprawdz zasobnik systemowy (tray)."
+
+#### 18. Encrypted Config / Master Password (`src/crypto.py` + config.py changes)
+- **Problem solved**: transport credentials, SMTP passwords stored as plain text JSON → now AES-256 encrypted
+- **Master password**: user sets in Settings → Bezpieczenstwo tab
+- **Encryption**: Fernet (AES-128-CBC via cryptography lib) with key derived from PBKDF2-HMAC-SHA256 (600k iterations, random 16-byte salt)
+- **Config split**:
+  - PUBLIC (plain JSON): `save_path`, `check_interval_minutes`, `dark_mode`, `auto_send`, `language`, `civ4_path`, `player_name`, `player_email`
+  - PRIVATE (encrypted blob): `transport` dict, `smtp` dict (all credentials)
+  - On disk: `config.json` has `"encrypted": {"salt": "...", "data": "..."}` — no plain text secrets
+- **Startup flow**:
+  1. App loads config → public data available immediately
+  2. If `config.has_master_password` → shows `QInputDialog` for password (3 attempts)
+  3. Correct → `config.unlock(password)` → full access
+  4. Wrong/cancel → app runs in "locked" mode (transport returns `{}`, buttons don't work)
+- **Settings UI**:
+  - Tab "Bezpieczenstwo": status display, set/change password (with confirm), info text
+  - Transport tab: shows "🔒 Dane transportu sa zaszyfrowane" when locked
+  - Notifications tab: same lock message when locked
+- **AppConfig API**:
+  - `config.is_unlocked` → bool
+  - `config.has_master_password` → bool
+  - `config.unlock(password)` → bool (True if correct)
+  - `config.lock()` → clears private data from memory
+  - `config.set_master_password(new_password)` → encrypts and saves
+  - `config.transport_config` → returns `{}` if locked (safe default)
+- **Backwards compatible**: if no encrypted section in config.json (legacy/first run), behaves as unlocked with plain data. Encryption activates only after user sets master password.
+- **Crypto module** (`src/crypto.py`): `encrypt_data(dict, password) → blob`, `decrypt_data(blob, password) → dict|None`, `verify_password(blob, password) → bool`
+- **Dependency**: `cryptography>=41.0` added to requirements.txt
 
 ### Output Requirements
 Generate ALL files listed in the project structure. The result should be:

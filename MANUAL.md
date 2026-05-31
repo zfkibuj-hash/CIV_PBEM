@@ -248,6 +248,63 @@ Niektore elementy (np. tytuly otwartych okien) zmienia sie po zamknieciu/otwarci
 Program blokuje uruchamianie wiecej niz jednej kopii.
 Na Windows: named mutex. Na Linux: file lock.
 
+### Zapomnialem hasla glownego
+Musisz usunac plik konfiguracji i ustawic wszystko od nowa:
+- Windows: usun `%APPDATA%\Civ4PBEMManager\config.json`
+- Linux: usun `~/.config/Civ4PBEMManager/config.json`
+Pliki gier (JSONy w `games/`) nie sa zaszyfrowane — pozostana nienaruszone.
+Ale transport kazdej gry bedzie wymagal ponownej konfiguracji.
+
 ---
 
-*Wersja dokumentu: 1.1 — odpowiada feature/stats-autolaunch-i18n*
+## 13. Szyfrowanie danych / Encryption
+
+### Problem
+Bez szyfrowania plik `config.json` zawiera w plain text:
+- Loginy i hasla do FTP/SFTP/WebDAV
+- Hasla SMTP
+- Adresy serwerow
+
+Kazdy kto ma dostep do dysku moze je odczytac.
+
+### Rozwiazanie
+Dane wrazliwe (transport, SMTP) sa szyfrowane AES-256 z haslem glownym:
+- Algorytm: Fernet (AES-128-CBC) z kluczem z PBKDF2-HMAC-SHA256
+- Iteracje: 600 000 (ochrona przed brute-force)
+- Sol: losowa 16 bajtow (unikalna per-zapis)
+
+### Jak ustawic
+
+1. Otworz **Ustawienia** → zakladka **Bezpieczenstwo**
+2. Wpisz nowe haslo + potwierdzenie
+3. Kliknij **"Ustaw / zmien haslo"**
+4. Gotowe — dane zostaly zaszyfrowane
+
+### Jak to dziala
+
+- **Przy starcie**: program pyta o haslo glowne (3 proby)
+- **Poprawne haslo**: pelny dostep do wszystkich funkcji
+- **Bledne / anulowanie**: program dziala w trybie "zablokowanym":
+  - Pobieranie/wysylanie save'ow **nie dziala** (brak dostepu do danych transportu)
+  - Zakladki Transport/Powiadomienia w Ustawieniach pokazuja ikone klodki
+  - Reszta aplikacji (przeglad gier, statystyki, Civ4) dziala normalnie
+- **Na dysku**: `config.json` zawiera `"encrypted": {"salt": "...", "data": "..."}` — nieczytelne bez hasla
+
+### Co jest szyfrowane, a co nie
+
+| Zaszyfrowane | Niezaszyfrowane |
+|---|---|
+| Transport (host, login, haslo) | Sciezka save'ow |
+| SMTP (host, login, haslo) | Tryb ciemny/jasny |
+| Konfiguracja email | Jezyk |
+| | Nazwa gracza |
+| | Sciezka Civ4 |
+| | Interwale sprawdzania |
+
+### Wsteczna kompatybilnosc
+Jesli nie ustawisz hasla — config dziala jak wczesniej (plain text).
+Szyfrowanie aktywuje sie dopiero po ustawieniu hasla w Bezpieczenstwo.
+
+---
+
+*Wersja dokumentu: 1.2 — odpowiada feature/stats-autolaunch-i18n*
