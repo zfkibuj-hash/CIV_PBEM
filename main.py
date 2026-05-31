@@ -17,7 +17,11 @@ import os
 import logging
 from pathlib import Path
 
-from PyQt5.QtWidgets import QApplication, QMessageBox, QFileDialog, QLineEdit
+from PyQt5.QtWidgets import (
+    QApplication, QMessageBox, QFileDialog, QLineEdit,
+    QInputDialog, QDialog, QVBoxLayout, QLabel, QDialogButtonBox,
+    QFormLayout, QGroupBox, QPushButton,
+)
 from PyQt5.QtGui import QIcon
 
 from src.config import AppConfig
@@ -145,6 +149,37 @@ def main():
     config = AppConfig()
     # Initialize i18n from saved language preference
     set_language(config.language)
+
+    # --- Master password / unlock ---
+    if config.has_master_password:
+        # Config is encrypted — ask for password
+        max_attempts = 3
+        unlocked = False
+        for attempt in range(max_attempts):
+            password, ok = QInputDialog.getText(
+                None,
+                "Civ4 PBEM Manager — Odblokuj / Unlock",
+                "Podaj haslo glowne / Enter master password:"
+                + (f"\n\n(Proba {attempt + 1}/{max_attempts})" if attempt > 0 else ""),
+                QLineEdit.Password,
+            )
+            if not ok:
+                # User cancelled — run in locked mode (no transport)
+                break
+            if config.unlock(password):
+                unlocked = True
+                break
+            else:
+                QMessageBox.warning(
+                    None,
+                    "Bledne haslo / Wrong password",
+                    "Nieprawidlowe haslo. Sprobuj ponownie.\n"
+                    "Wrong password. Try again.",
+                )
+
+        if not unlocked:
+            # Run in read-only mode — transport disabled
+            logger.warning("Config locked — running without transport access")
 
     controller = AppController(config)
     window = MainWindow(config)

@@ -1006,6 +1006,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._create_general_tab(), "Ogolne")
         tabs.addTab(self._create_transport_tab(), "Transport")
         tabs.addTab(self._create_notifications_tab(), "Powiadomienia")
+        tabs.addTab(self._create_security_tab(), "Bezpieczenstwo")
         layout.addWidget(tabs)
 
         # Buttons at the bottom (always visible)
@@ -1102,6 +1103,25 @@ class SettingsDialog(QDialog):
     # --- Tab 2: Transport ---
     def _create_transport_tab(self) -> QWidget:
         from PyQt5.QtWidgets import QScrollArea
+
+        # If config is locked, show lock message instead of form
+        if not self.config.is_unlocked:
+            locked_tab = QWidget()
+            locked_layout = QVBoxLayout(locked_tab)
+            locked_layout.addStretch()
+            lock_label = QLabel(
+                "🔒 Dane transportu sa zaszyfrowane.\n\n"
+                "Odblokuj aplikacje haslem glownym\n"
+                "aby wyswietlic i edytowac te ustawienia.\n\n"
+                "🔒 Transport data is encrypted.\n"
+                "Unlock the app with master password\n"
+                "to view and edit these settings."
+            )
+            lock_label.setAlignment(Qt.AlignCenter)
+            lock_label.setStyleSheet("font-size: 11pt; color: #ff9800; padding: 40px;")
+            locked_layout.addWidget(lock_label)
+            locked_layout.addStretch()
+            return locked_tab
 
         # Use a scroll area so email fields never overlap on small screens
         scroll = QScrollArea()
@@ -1223,6 +1243,22 @@ class SettingsDialog(QDialog):
 
     # --- Tab 3: Notifications ---
     def _create_notifications_tab(self) -> QWidget:
+        # If config is locked, show lock message
+        if not self.config.is_unlocked:
+            locked_tab = QWidget()
+            locked_layout = QVBoxLayout(locked_tab)
+            locked_layout.addStretch()
+            lock_label = QLabel(
+                "🔒 Dane SMTP sa zaszyfrowane.\n\n"
+                "Odblokuj aplikacje haslem glownym\n"
+                "aby wyswietlic i edytowac te ustawienia."
+            )
+            lock_label.setAlignment(Qt.AlignCenter)
+            lock_label.setStyleSheet("font-size: 11pt; color: #ff9800; padding: 40px;")
+            locked_layout.addWidget(lock_label)
+            locked_layout.addStretch()
+            return locked_tab
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
@@ -1265,6 +1301,106 @@ class SettingsDialog(QDialog):
 
         layout.addStretch()
         return tab
+
+    # --- Tab 4: Security ---
+    def _create_security_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # Status
+        status_group = QGroupBox("Status szyfrowania / Encryption status")
+        status_layout = QVBoxLayout(status_group)
+
+        if self.config.has_master_password:
+            if self.config.is_unlocked:
+                status_label = QLabel("🔓 Odblokowane — dane dostepne\n🔓 Unlocked — data accessible")
+                status_label.setStyleSheet("color: #66bb6a; font-size: 10pt;")
+            else:
+                status_label = QLabel("🔒 Zablokowane — dane zaszyfrowane\n🔒 Locked — data encrypted")
+                status_label.setStyleSheet("color: #ff9800; font-size: 10pt;")
+        else:
+            status_label = QLabel(
+                "⚠ Brak hasla — dane przechowywane jako plain text!\n"
+                "⚠ No password — data stored as plain text!\n\n"
+                "Ustaw haslo glowne aby zaszyfrowac."
+            )
+            status_label.setStyleSheet("color: #ef5350; font-size: 10pt;")
+
+        status_layout.addWidget(status_label)
+        layout.addWidget(status_group)
+
+        # Set / Change password
+        password_group = QGroupBox("Haslo glowne / Master password")
+        password_form = QFormLayout(password_group)
+
+        self.new_password_edit = QLineEdit()
+        self.new_password_edit.setEchoMode(QLineEdit.Password)
+        self.new_password_edit.setPlaceholderText("Nowe haslo / New password")
+        password_form.addRow("Haslo:", self.new_password_edit)
+
+        self.confirm_password_edit = QLineEdit()
+        self.confirm_password_edit.setEchoMode(QLineEdit.Password)
+        self.confirm_password_edit.setPlaceholderText("Powtorz haslo / Confirm password")
+        password_form.addRow("Powtorz:", self.confirm_password_edit)
+
+        btn_set_password = QPushButton("Ustaw / zmien haslo")
+        btn_set_password.setStyleSheet("color: #ff9800; border-color: #ff9800; font-weight: bold;")
+        btn_set_password.clicked.connect(self._on_set_master_password)
+        password_form.addRow(btn_set_password)
+
+        layout.addWidget(password_group)
+
+        # Info
+        info_label = QLabel(
+            "Haslo glowne szyfruje: dane transportu (FTP/SFTP/WebDAV/Email),\n"
+            "loginy, hasla SMTP, hasla do serwerow.\n\n"
+            "Bez hasla te dane beda wymagane przy kazdym uruchomieniu.\n"
+            "UWAGA: Jesli zapomnisz hasla, musisz usunac config i ustawic od nowa!\n\n"
+            "Master password encrypts: transport credentials, SMTP passwords.\n"
+            "If you forget it, you must delete config and set up again."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #9e9e9e; font-size: 9pt; padding: 8px;")
+        layout.addWidget(info_label)
+
+        layout.addStretch()
+        return tab
+
+    def _on_set_master_password(self):
+        """Set or change the master password."""
+        new_pass = self.new_password_edit.text()
+        confirm = self.confirm_password_edit.text()
+
+        if not new_pass:
+            QMessageBox.warning(self, "Blad", "Haslo nie moze byc puste.")
+            return
+
+        if len(new_pass) < 4:
+            QMessageBox.warning(self, "Blad", "Haslo musi miec minimum 4 znaki.")
+            return
+
+        if new_pass != confirm:
+            QMessageBox.warning(self, "Blad", "Hasla nie sa identyczne!\nPasswords don't match!")
+            return
+
+        # If already has password and is locked, can't change
+        if self.config.has_master_password and not self.config.is_unlocked:
+            QMessageBox.warning(
+                self, "Blad",
+                "Nie mozna zmienic hasla gdy config jest zablokowany.\n"
+                "Najpierw odblokuj przy starcie aplikacji."
+            )
+            return
+
+        self.config.set_master_password(new_pass)
+        QMessageBox.information(
+            self, "OK",
+            "Haslo ustawione! Dane zostaly zaszyfrowane.\n"
+            "Password set! Data has been encrypted.\n\n"
+            "Od teraz przy starcie program bedzie pytac o haslo."
+        )
+        self.new_password_edit.clear()
+        self.confirm_password_edit.clear()
 
     # --- Logic ---
     def _on_transport_type_changed(self, transport_type: str):
