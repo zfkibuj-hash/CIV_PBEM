@@ -197,6 +197,12 @@ CIV_PBEM/
   - **auto_send=False** (default): shows popup dialog asking to upload (can minimize fullscreen game!)
   - **auto_send=True**: uploads automatically, only balloon notification (safe for fullscreen play)
 - 5-second deduplication cooldown per file. Daemon thread.
+- **Ignore list** (`ignore_next(filepath)`): files downloaded BY THE APP are excluded from detection
+  - Controller calls `watcher.ignore_next(path)` BEFORE writing a downloaded save
+  - Prevents the "just downloaded turn → watchdog asks to re-upload" loop
+  - Entries auto-expire after 30 seconds (safety against stale entries)
+  - Path normalization (resolve()) ensures consistent matching
+  - Only fires for saves that CIV4 itself creates (player finished turn)
 
 #### 12. Windows Integration
 - `SetCurrentProcessExplicitAppUserModelID` for taskbar icon
