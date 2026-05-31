@@ -39,6 +39,30 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Transport gry...",
         "en": "Game transport...",
     },
+    "edit_game": {
+        "pl": "Edytuj gre...",
+        "en": "Edit game...",
+    },
+    "edit_game_title": {
+        "pl": "Edycja gry: {name}",
+        "en": "Edit game: {name}",
+    },
+    "edit_alias": {
+        "pl": "Tozsamosc w grze",
+        "en": "Game identity",
+    },
+    "edit_alias_label": {
+        "pl": "Jestem graczem:",
+        "en": "I am player:",
+    },
+    "edit_players": {
+        "pl": "Emaile graczy",
+        "en": "Player emails",
+    },
+    "game_saved": {
+        "pl": "Zapisano zmiany gry '{name}'",
+        "en": "Game '{name}' changes saved",
+    },
     "settings": {
         "pl": "Ustawienia",
         "en": "Settings",
@@ -79,9 +103,29 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Historia tur (kliknij aby przywrocic)",
         "en": "Turn history (click to revert)",
     },
+    "history_filter": {
+        "pl": "Filtr:",
+        "en": "Filter:",
+    },
+    "history_filter_all": {
+        "pl": "Wszyscy gracze",
+        "en": "All players",
+    },
     "revert_selected": {
         "pl": "Przywroc zaznaczona ture",
         "en": "Revert to selected turn",
+    },
+    "launch_this_turn": {
+        "pl": "Uruchom te ture",
+        "en": "Launch this turn",
+    },
+    "launch_no_file": {
+        "pl": "Ta tura nie ma skojarzonego pliku save.",
+        "en": "This turn has no associated save file.",
+    },
+    "launch_file_missing": {
+        "pl": "Plik save nie istnieje lokalnie:\n{filename}\n\nPobierz go najpierw z serwera.",
+        "en": "Save file not found locally:\n{filename}\n\nDownload it from server first.",
     },
     "ready": {
         "pl": "Gotowy",

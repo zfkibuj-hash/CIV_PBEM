@@ -317,7 +317,7 @@ class MainWindow(QMainWindow):
         self._minimize_to_tray = False  # Set to True by main.py when tray is available
         self._tray_icon = None  # Reference to TrayIcon, set by main.py
 
-        self.setWindowTitle("Civ4 PBEM Manager v1.0")
+        self.setWindowTitle("Civ4 PBEM Manager v3.0")
         self.setMinimumSize(800, 600)
         self.apply_theme()
         self._restore_geometry()
@@ -407,6 +407,10 @@ class MainWindow(QMainWindow):
         self.btn_game_transport.clicked.connect(self._on_game_transport)
         sidebar_layout.addWidget(self.btn_game_transport)
 
+        self.btn_edit_game = QPushButton(t("edit_game"))
+        self.btn_edit_game.clicked.connect(self._on_edit_game)
+        sidebar_layout.addWidget(self.btn_edit_game)
+
         self.btn_stats = QPushButton(t("statistics"))
         self.btn_stats.clicked.connect(self._on_statistics)
         sidebar_layout.addWidget(self.btn_stats)
@@ -483,14 +487,35 @@ class MainWindow(QMainWindow):
         # History - clickable list for turn revert
         history_group = QGroupBox(t("history_group"))
         history_layout = QVBoxLayout(history_group)
+
+        # Player filter
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel(t("history_filter")))
+        self.history_filter_combo = QComboBox()
+        self.history_filter_combo.addItem(t("history_filter_all"), "")
+        self.history_filter_combo.currentIndexChanged.connect(self._on_history_filter_changed)
+        filter_layout.addWidget(self.history_filter_combo)
+        filter_layout.addStretch()
+        history_layout.addLayout(filter_layout)
+
         self.history_list = QListWidget()
-        self.history_list.setMaximumHeight(160)
+        self.history_list.setMaximumHeight(180)
         history_layout.addWidget(self.history_list)
+
+        # Buttons row
+        history_buttons = QHBoxLayout()
 
         self.btn_revert = QPushButton(t("revert_selected"))
         self.btn_revert.setStyleSheet("color: #ff9800; border-color: #ff9800;")
         self.btn_revert.clicked.connect(self._on_revert_turn)
-        history_layout.addWidget(self.btn_revert)
+        history_buttons.addWidget(self.btn_revert)
+
+        self.btn_launch_turn = QPushButton(t("launch_this_turn"))
+        self.btn_launch_turn.setStyleSheet("color: #42a5f5; border-color: #42a5f5;")
+        self.btn_launch_turn.clicked.connect(self._on_launch_turn)
+        history_buttons.addWidget(self.btn_launch_turn)
+
+        history_layout.addLayout(history_buttons)
 
         content_layout.addWidget(history_group)
 
@@ -597,18 +622,22 @@ class MainWindow(QMainWindow):
                 f"{t('playing_since', name=cp_name, time=elapsed_str)}"
             )
 
-        # History
-        self.history_list.clear()
-        for turn in reversed(game.history[-20:]):
-            import datetime
-            dt = datetime.datetime.fromtimestamp(turn.timestamp)
-            year_str = turn_to_year_str(turn.turn_number, game.game_speed)
-            text = f"{dt.strftime('%d.%m %H:%M')}  {turn.player_name} -> {t('turn')} {turn.turn_number} ({year_str})  [{turn.filename}]"
-            item = QListWidgetItem(text)
-            # Store the history index as user data
-            idx = game.history.index(turn)
-            item.setData(Qt.UserRole, idx)
-            self.history_list.addItem(item)
+        # Update filter combo with players from this game
+        current_filter = self.history_filter_combo.currentData()
+        self.history_filter_combo.blockSignals(True)
+        self.history_filter_combo.clear()
+        self.history_filter_combo.addItem(t("history_filter_all"), "")
+        for p in game.players:
+            self.history_filter_combo.addItem(p.name, p.name)
+        # Restore previous selection if still valid
+        if current_filter:
+            idx = self.history_filter_combo.findData(current_filter)
+            if idx >= 0:
+                self.history_filter_combo.setCurrentIndex(idx)
+        self.history_filter_combo.blockSignals(False)
+
+        # History (filtered)
+        self._populate_history_list()
 
     @staticmethod
     def _format_elapsed(seconds: float) -> str:
@@ -625,6 +654,94 @@ class MainWindow(QMainWindow):
             return f"{minutes} min."
         else:
             return "< 1 min."
+
+    def _populate_history_list(self):
+        """Fill history list with turns, respecting the player filter."""
+        game = self.current_game
+        if not game:
+            return
+
+        self.history_list.clear()
+        filter_player = self.history_filter_combo.currentData() or ""
+
+        for turn in reversed(game.history[-50:]):
+            # Apply filter
+            if filter_player and turn.player_name != filter_player:
+                continue
+
+            import datetime
+            dt = datetime.datetime.fromtimestamp(turn.timestamp)
+            year_str = turn_to_year_str(turn.turn_number, game.game_speed)
+            text = f"{dt.strftime('%d.%m %H:%M')}  {turn.player_name} -> {t('turn')} {turn.turn_number} ({year_str})  [{turn.filename}]"
+            item = QListWidgetItem(text)
+            idx = game.history.index(turn)
+            item.setData(Qt.UserRole, idx)
+            self.history_list.addItem(item)
+
+    def _on_history_filter_changed(self, index: int):
+        """Refresh history list when player filter changes."""
+        self._populate_history_list()
+
+    def _clear_game_view(self):
+        """Clear the right panel when no game is selected (e.g. after delete)."""
+        self.header_label.setText(t("select_game"))
+        self.status_banner.setText("")
+        self.status_banner.setObjectName("banner_waiting")
+        self.players_label.setText("")
+        self.history_list.clear()
+        self.history_filter_combo.clear()
+        self.history_filter_combo.addItem(t("history_filter_all"), "")
+
+    def _on_launch_turn(self):
+        """Launch Civ4 with the save file from the selected history entry."""
+        if not self.current_game:
+            return
+
+        selected = self.history_list.currentItem()
+        if not selected:
+            QMessageBox.information(self, t("info"), t("revert_select_hint"))
+            return
+
+        history_index = selected.data(Qt.UserRole)
+        if history_index is None:
+            return
+
+        game = self.current_game
+        if history_index >= len(game.history):
+            return
+
+        target_turn = game.history[history_index]
+        if not target_turn.filename:
+            QMessageBox.warning(self, t("error"), t("launch_no_file"))
+            return
+
+        # Check if the save file exists locally
+        save_dir = Path(self.config.save_path)
+        local_path = save_dir / target_turn.filename
+
+        if not local_path.exists():
+            QMessageBox.warning(
+                self, t("error"),
+                t("launch_file_missing", filename=target_turn.filename)
+            )
+            return
+
+        # Check Civ4 path
+        civ4_path = self.config.civ4_path
+        if not civ4_path:
+            QMessageBox.warning(self, t("error"), t("civ4_not_found"))
+            return
+
+        # Launch
+        if is_civ4_running():
+            self.status_label.setText(t("civ4_already_running"))
+            return
+
+        success, msg_key = launch_civ4(civ4_path, save_file=str(local_path))
+        if success:
+            self.status_label.setText(f"{t('civ4_launched')} ({target_turn.filename})")
+        else:
+            self.status_label.setText(t(msg_key) if msg_key == "civ4_not_found" else msg_key)
 
     def _on_new_game(self):
         """Create a new game dialog."""
@@ -645,10 +762,12 @@ class MainWindow(QMainWindow):
 
         game = self.current_game
         export_data = {
-            "civ4pbem_version": "1.0",
+            "civ4pbem_version": "1.1",
             "name": game.name,
             "players": [p.to_dict() for p in game.players],
             "transport_config": game.transport_config,
+            "game_speed": game.game_speed,
+            "smtp": self.config.smtp_config,  # Include SMTP so all players get notifications
         }
 
         import json
@@ -699,12 +818,23 @@ class MainWindow(QMainWindow):
 
             players = [Player.from_dict(p) for p in data.get("players", [])]
             transport_config = data.get("transport_config", {})
+            game_speed = data.get("game_speed", "normal")
 
             game = Game(
                 name=name,
                 players=players,
                 transport_config=transport_config,
+                game_speed=game_speed,
             )
+
+            # Import SMTP config if included (shared notification setup)
+            imported_smtp = data.get("smtp")
+            if imported_smtp and isinstance(imported_smtp, dict):
+                # Set SMTP config so notifications work without manual setup
+                current_smtp = self.config.smtp_config
+                if not current_smtp.get("host"):
+                    # Only overwrite if user hasn't configured their own SMTP
+                    self.config.set("smtp", imported_smtp)
 
             # --- Player identity selection ---
             # User must confirm which player from the list they are
@@ -791,6 +921,20 @@ class MainWindow(QMainWindow):
             from src.config import get_games_dir
             self.current_game.save_to_file(get_games_dir())
             self.status_label.setText(t("transport_saved", name=self.current_game.name))
+
+    def _on_edit_game(self):
+        """Open game edit dialog for changing player emails, speed, alias."""
+        if not self.current_game:
+            QMessageBox.information(self, t("info"), t("select_game_to_export"))
+            return
+
+        dialog = EditGameDialog(self.config, self.current_game, self)
+        if dialog.exec_() == QDialog.Accepted:
+            from src.config import get_games_dir
+            self.current_game.save_to_file(get_games_dir())
+            self._update_game_view()
+            self._refresh_game_list()
+            self.status_label.setText(t("game_saved", name=self.current_game.name))
 
     settings_saved = pyqtSignal()
 
@@ -1943,3 +2087,94 @@ class GameStatsDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+
+
+class EditGameDialog(QDialog):
+    """Dialog for editing an existing game's settings (players, emails, speed, alias)."""
+
+    def __init__(self, config: AppConfig, game: Game, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.game = game
+        self.setWindowTitle(t("edit_game_title", name=game.name))
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setMinimumSize(500, 400)
+        self.resize(540, 450)
+        self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+
+        # Game speed
+        speed_group = QGroupBox(t("game_speed"))
+        speed_form = QFormLayout(speed_group)
+        self.speed_combo = QComboBox()
+        self.speed_combo.addItem("Quick (330)", "quick")
+        self.speed_combo.addItem("Normal (500)", "normal")
+        self.speed_combo.addItem("Epic (750)", "epic")
+        self.speed_combo.addItem("Marathon (1500)", "marathon")
+        idx = self.speed_combo.findData(self.game.game_speed)
+        if idx >= 0:
+            self.speed_combo.setCurrentIndex(idx)
+        speed_form.addRow(t("game_speed"), self.speed_combo)
+        layout.addWidget(speed_group)
+
+        # Player alias
+        alias_group = QGroupBox(t("edit_alias"))
+        alias_form = QFormLayout(alias_group)
+        self.alias_combo = QComboBox()
+        self.alias_combo.addItem(f"({t('history_filter_all')} — no alias)", "")
+        for p in self.game.players:
+            self.alias_combo.addItem(p.name, p.name)
+        current_alias = self.game.local_player_alias
+        if current_alias:
+            idx = self.alias_combo.findData(current_alias)
+            if idx >= 0:
+                self.alias_combo.setCurrentIndex(idx)
+        alias_form.addRow(t("edit_alias_label"), self.alias_combo)
+        layout.addWidget(alias_group)
+
+        # Players — editable emails
+        players_group = QGroupBox(t("edit_players"))
+        players_layout = QVBoxLayout(players_group)
+
+        self._email_edits = []
+        for p in self.game.players:
+            row = QHBoxLayout()
+            name_label = QLabel(f"{p.name}:")
+            name_label.setMinimumWidth(100)
+            row.addWidget(name_label)
+            email_edit = QLineEdit(p.email)
+            email_edit.setPlaceholderText("email@example.com")
+            row.addWidget(email_edit)
+            self._email_edits.append((p, email_edit))
+            players_layout.addLayout(row)
+
+        layout.addWidget(players_group)
+
+        layout.addStretch()
+
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _save(self):
+        """Apply changes to the game object."""
+        # Update speed
+        self.game.game_speed = self.speed_combo.currentData()
+
+        # Update alias
+        alias = self.alias_combo.currentData()
+        self.game.local_player_alias = alias or ""
+
+        # Update player emails
+        for player, email_edit in self._email_edits:
+            new_email = email_edit.text().strip()
+            if new_email:
+                player.email = new_email
+
+        self.accept()
