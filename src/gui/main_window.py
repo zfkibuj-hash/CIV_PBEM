@@ -669,11 +669,57 @@ class MainWindow(QMainWindow):
                 transport_config=transport_config,
             )
 
+            # --- Player identity selection ---
+            # User must confirm which player from the list they are
+            player_names = [p.name for p in players]
+            my_local_name = self.config.player_name
+
+            # If local name matches a player exactly, pre-select it
+            default_idx = 0
+            for i, pn in enumerate(player_names):
+                if pn == my_local_name:
+                    default_idx = i
+                    break
+
+            from PyQt5.QtWidgets import QInputDialog
+            chosen_name, ok = QInputDialog.getItem(
+                self,
+                "Wybierz swojego gracza / Choose your player",
+                f"Gra: {name}\nTwoj lokalny nick: '{my_local_name}'\n\n"
+                f"Ktorym graczem z listy jestes?\n"
+                f"Which player are you?",
+                player_names,
+                default_idx,
+                False,  # not editable
+            )
+            if not ok:
+                return
+
+            # Set alias: local nick → game player name
+            if chosen_name != my_local_name:
+                game.local_player_alias = chosen_name
+            else:
+                game.local_player_alias = ""  # No alias needed, names match
+
+            # Confirm email for notifications
+            chosen_player = next((p for p in players if p.name == chosen_name), None)
+            if chosen_player:
+                confirmed_email, ok2 = QInputDialog.getText(
+                    self,
+                    "Potwierdz email / Confirm email",
+                    f"Gracz: {chosen_name}\n"
+                    f"Email na ktory dostaniesz powiadomienie o turze:",
+                    QLineEdit.Normal,
+                    chosen_player.email,
+                )
+                if ok2 and confirmed_email.strip():
+                    chosen_player.email = confirmed_email.strip()
+
             from src.config import get_games_dir
             game.save_to_file(get_games_dir())
             self.games.append(game)
             self._refresh_game_list()
-            self.status_label.setText(f"Zaimportowano gre: {name}")
+            self.status_label.setText(f"Zaimportowano gre: {name} (gracz: {chosen_name})")
 
         except Exception as e:
             QMessageBox.warning(self, "Blad importu", f"Nie udalo sie zaimportowac:\n{e}")

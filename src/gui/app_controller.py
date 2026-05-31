@@ -135,22 +135,24 @@ class AppController(QObject):
 
         Logic: a save named _SenderName means it was sent BY that player.
         This player should download saves sent by the PREVIOUS player in turn order.
+        Uses alias mapping to resolve local nick → game player name.
         """
         transport = self._create_transport_for_game(game)
         if not transport:
             return False, "Transport nie jest skonfigurowany dla tej gry"
 
         my_name = self.config.player_name
+        my_game_name = game.get_game_player_name(my_name)
 
-        # Find who should have sent me the save (previous player in order)
+        # Find my index in the player list (using game name, not local nick)
         my_index = None
         for i, p in enumerate(game.players):
-            if p.name == my_name:
+            if p.name == my_game_name:
                 my_index = i
                 break
 
         if my_index is None:
-            return False, f"Gracz '{my_name}' nie jest w tej grze"
+            return False, f"Gracz '{my_game_name}' nie jest w tej grze"
 
         prev_index = (my_index - 1) % len(game.players)
         prev_player = game.players[prev_index]
@@ -189,9 +191,10 @@ class AppController(QObject):
             return []
 
         my_name = self.config.player_name
+        my_game_name = game.get_game_player_name(my_name)
         my_index = None
         for i, p in enumerate(game.players):
-            if p.name == my_name:
+            if p.name == my_game_name:
                 my_index = i
                 break
         if my_index is None:
@@ -229,6 +232,8 @@ class AppController(QObject):
             return False, "Transport nie jest skonfigurowany dla tej gry"
 
         my_name = self.config.player_name
+        # Use game player name (alias) for filename, not local nick
+        my_game_name = game.get_game_player_name(my_name)
         remote_filename = game.get_save_filename(my_name)
 
         # For email transport in individual mode, pass the next player's email
@@ -254,6 +259,12 @@ class AppController(QObject):
             # Also upload game state so other instances can sync
             game_state_path = get_games_dir() / f"{game.name}.json"
             transport.upload(game_state_path, f"{game.name}_state.json", game.name)
+
+            # Upload shared game config (ensures all players can sync transport settings)
+            # Only upload if no config exists yet (first player to upload establishes it)
+            config_filename = f"{game.name}.config"
+            if not transport.file_exists(config_filename, game.name):
+                self.upload_game_config(game)
 
             # Send notification
             if self._notifier and next_player:
@@ -293,7 +304,9 @@ class AppController(QObject):
         return notifications
 
     def _sync_game_state(self, game: Game, transport: Optional[BaseTransport] = None):
-        """Download game state from remote to keep in sync with other players."""
+        """Download game state from remote to keep in sync with other players.
+        Also downloads shared {GameName}.config if available and validates.
+        """
         if not transport:
             transport = self._create_transport_for_game(game)
         if not transport:
@@ -315,6 +328,27 @@ class AppController(QObject):
                         self.games_updated.emit()
                 except Exception as e:
                     logger.error(f"Failed to sync game state: {e}")
+
+        # Sync shared game config (verify transport consistency after first round)
+        config_filename = f"{game.name}.config"
+        if transport.file_exists(config_filename, game.name):
+            import json
+            import tempfile
+            tmp_path = Path(tempfile.gettempdir()) / f"_sync_{config_filename}"
+            if transport.download(config_filename, tmp_path, game.name):
+                try:
+                    with open(tmp_path, "r", encoding="utf-8") as f:
+                        remote_cfg = json.load(f)
+                    # Auto-update transport config if remote is newer/different
+                    remote_tc = remote_cfg.get("transport_config", {})
+                    if remote_tc and remote_tc != game.transport_config:
+                        logger.info(f"Updating transport config from remote for game {game.name}")
+                        game.transport_config = remote_tc
+                        game.save_to_file(get_games_dir())
+                except Exception as e:
+                    logger.error(f"Failed to sync game config: {e}")
+                finally:
+                    tmp_path.unlink(missing_ok=True)
 
     def revert_turn(self, game: Game, history_index: int) -> tuple[bool, str]:
         """Revert a game to a specific turn and notify all players."""
@@ -396,6 +430,123 @@ class AppController(QObject):
         if not self._notifier:
             return False, "SMTP nie jest skonfigurowany"
         return self._notifier.test_connection()
+
+    def upload_game_config(self, game: Game) -> tuple[bool, str]:
+        """Upload shared game config to remote so all players sync transport settings.
+
+        Uploads {GameName}.config file containing:
+        - Player list (names, emails, order)
+        - Transport config (shared — all players use same server)
+        - Game name
+
+        Called by the game creator after initial setup. Other players
+        download this to get correct transport settings.
+        """
+        transport = self._create_transport_for_game(game)
+        if not transport:
+            return False, "Transport nie jest skonfigurowany"
+
+        import json
+        import tempfile
+
+        config_data = {
+            "civ4pbem_config_version": "1.0",
+            "name": game.name,
+            "players": [p.to_dict() for p in game.players],
+            "transport_config": game.transport_config,
+            "admin_password": game.admin_password,
+        }
+
+        # Write to temp file and upload
+        config_filename = f"{game.name}.config"
+        tmp_path = Path(tempfile.gettempdir()) / config_filename
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, indent=2, ensure_ascii=False)
+
+        success = transport.upload(tmp_path, config_filename, game.name)
+        tmp_path.unlink(missing_ok=True)
+
+        if success:
+            return True, f"Konfiguracja gry wyslana na serwer: {config_filename}"
+        return False, "Blad wysylania konfiguracji"
+
+    def download_game_config(self, game: Game) -> tuple[bool, str, Optional[dict]]:
+        """Download shared game config from remote to verify/sync settings.
+
+        Returns (success, message, config_data_or_None).
+        Used after first round to verify all players have consistent config.
+        """
+        transport = self._create_transport_for_game(game)
+        if not transport:
+            return False, "Transport nie jest skonfigurowany", None
+
+        import json
+        import tempfile
+
+        config_filename = f"{game.name}.config"
+        tmp_path = Path(tempfile.gettempdir()) / f"_dl_{config_filename}"
+
+        if not transport.file_exists(config_filename, game.name):
+            return False, f"Brak pliku {config_filename} na serwerze", None
+
+        success = transport.download(config_filename, tmp_path, game.name)
+        if not success:
+            return False, "Blad pobierania konfiguracji", None
+
+        try:
+            with open(tmp_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            tmp_path.unlink(missing_ok=True)
+            return True, "Konfiguracja pobrana", data
+        except Exception as e:
+            tmp_path.unlink(missing_ok=True)
+            return False, f"Blad odczytu konfiguracji: {e}", None
+
+    def verify_game_config(self, game: Game) -> tuple[bool, list[str]]:
+        """Verify local game config matches remote shared config.
+
+        Downloads {GameName}.config and compares:
+        - Player list (names match)
+        - Transport type and host match
+
+        Returns (all_ok, list_of_warnings).
+        """
+        ok, msg, remote_data = self.download_game_config(game)
+        if not ok or remote_data is None:
+            return False, [msg]
+
+        warnings = []
+
+        # Check player list
+        remote_players = remote_data.get("players", [])
+        local_players = [p.to_dict() for p in game.players]
+
+        remote_names = {p["name"] for p in remote_players}
+        local_names = {p["name"] for p in local_players}
+
+        if remote_names != local_names:
+            missing = remote_names - local_names
+            extra = local_names - remote_names
+            if missing:
+                warnings.append(f"Brakujacy gracze lokalnie: {', '.join(missing)}")
+            if extra:
+                warnings.append(f"Nadmiarowi gracze lokalnie: {', '.join(extra)}")
+
+        # Check transport type
+        remote_tc = remote_data.get("transport_config", {})
+        local_tc = game.transport_config
+        if remote_tc.get("type") != local_tc.get("type"):
+            warnings.append(
+                f"Typ transportu: serwer={remote_tc.get('type')}, "
+                f"lokalnie={local_tc.get('type')}"
+            )
+        if remote_tc.get("host") != local_tc.get("host"):
+            warnings.append(
+                f"Host transportu: serwer={remote_tc.get('host')}, "
+                f"lokalnie={local_tc.get('host')}"
+            )
+
+        return len(warnings) == 0, warnings
 
     def get_latest_local_save(self, game: Game) -> Optional[Path]:
         """Find the most recently downloaded save for a game in local save folder.
