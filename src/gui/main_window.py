@@ -637,7 +637,7 @@ class MainWindow(QMainWindow):
     def _on_export_game(self):
         """Export current game config to a .civ4pbem file for sharing with other players."""
         if not self.current_game:
-            QMessageBox.information(self, "Info", "Zaznacz gre do eksportu.")
+            QMessageBox.information(self, t("info"), t("select_game_to_export"))
             return
 
         game = self.current_game
@@ -657,7 +657,7 @@ class MainWindow(QMainWindow):
         if filepath:
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False)
-            self.status_label.setText(f"Wyeksportowano: {filepath}")
+            self.status_label.setText(t("exported", path=filepath))
 
     def _on_import_game(self):
         """Import a game from a .civ4pbem file shared by another player."""
@@ -675,15 +675,15 @@ class MainWindow(QMainWindow):
 
             name = data.get("name", "")
             if not name:
-                QMessageBox.warning(self, "Blad", "Plik nie zawiera nazwy gry.")
+                QMessageBox.warning(self, t("error"), t("import_error", error="No game name"))
                 return
 
             # Check for duplicate
             for g in self.games:
                 if g.name == name:
                     reply = QMessageBox.question(
-                        self, "Gra juz istnieje",
-                        f"Gra '{name}' juz istnieje. Nadpisac?",
+                        self, t("info"),
+                        t("game_exists_overwrite", name=name),
                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
                     )
                     if reply != QMessageBox.Yes:
@@ -753,22 +753,21 @@ class MainWindow(QMainWindow):
             game.save_to_file(get_games_dir())
             self.games.append(game)
             self._refresh_game_list()
-            self.status_label.setText(f"Zaimportowano gre: {name} (gracz: {chosen_name})")
+            self.status_label.setText(t("imported", name=f"{name} ({chosen_name})"))
 
         except Exception as e:
-            QMessageBox.warning(self, "Blad importu", f"Nie udalo sie zaimportowac:\n{e}")
+            QMessageBox.warning(self, t("error"), t("import_error", error=str(e)))
 
     def _on_delete_game(self):
         """Delete the currently selected game."""
         if not self.current_game:
-            QMessageBox.information(self, "Info", "Zaznacz gre do usuniecia.")
+            QMessageBox.information(self, t("info"), t("select_game_to_delete"))
             return
 
         reply = QMessageBox.warning(
             self,
-            "Usuwanie gry",
-            f"Czy na pewno chcesz usunac gre '{self.current_game.name}'?\n\n"
-            f"Ta operacja jest nieodwracalna!",
+            t("delete_game_title"),
+            t("delete_game_confirm", name=self.current_game.name),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -779,7 +778,7 @@ class MainWindow(QMainWindow):
     def _on_game_transport(self):
         """Open transport configuration dialog for the current game."""
         if not self.current_game:
-            QMessageBox.information(self, "Info", "Zaznacz gre aby skonfigurowac transport.")
+            QMessageBox.information(self, t("info"), t("select_game_for_transport"))
             return
 
         dialog = GameTransportDialog(self.config, self.current_game, self.games, self)
@@ -788,7 +787,7 @@ class MainWindow(QMainWindow):
             self.current_game.transport_config = tc
             from src.config import get_games_dir
             self.current_game.save_to_file(get_games_dir())
-            self.status_label.setText(f"Transport gry '{self.current_game.name}' zapisany.")
+            self.status_label.setText(t("transport_saved", name=self.current_game.name))
 
     settings_saved = pyqtSignal()
 
