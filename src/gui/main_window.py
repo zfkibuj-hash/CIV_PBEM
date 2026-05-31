@@ -319,6 +319,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Civ4 PBEM Manager v1.0")
         self.setMinimumSize(800, 600)
         self.apply_theme()
+        self._restore_geometry()
 
         self._init_ui()
         self._load_games()
@@ -328,6 +329,39 @@ class MainWindow(QMainWindow):
         """Apply dark or light theme based on config."""
         is_dark = self.config.get("dark_mode", True)
         self.setStyleSheet(get_style_for_theme(is_dark))
+
+    def _save_geometry(self):
+        """Save window position and size to config."""
+        geo = self.geometry()
+        self.config.set("window_geometry", {
+            "x": geo.x(),
+            "y": geo.y(),
+            "width": geo.width(),
+            "height": geo.height(),
+        })
+
+    def _restore_geometry(self):
+        """Restore window position and size from config."""
+        geo = self.config.get("window_geometry")
+        if geo and isinstance(geo, dict):
+            from PyQt5.QtWidgets import QDesktopWidget
+            # Validate the position is on-screen
+            desktop = QDesktopWidget()
+            screen_rect = desktop.availableGeometry(self)
+            x = geo.get("x", 100)
+            y = geo.get("y", 100)
+            w = geo.get("width", 900)
+            h = geo.get("height", 650)
+            # Clamp to screen bounds
+            if x < 0 or x > screen_rect.width() - 100:
+                x = 100
+            if y < 0 or y > screen_rect.height() - 100:
+                y = 100
+            w = max(800, min(w, screen_rect.width()))
+            h = max(600, min(h, screen_rect.height()))
+            self.setGeometry(x, y, w, h)
+        else:
+            self.resize(900, 650)
 
     def _init_ui(self):
         central = QWidget()
@@ -763,7 +797,29 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self.config, self)
         if dialog.exec_() == QDialog.Accepted:
             self.apply_theme()
+            # Refresh UI labels for new language
+            self._refresh_ui_language()
             self.settings_saved.emit()
+
+    def _refresh_ui_language(self):
+        """Update all UI text labels after language change."""
+        self.btn_download.setText(t("download_save"))
+        self.btn_upload.setText(t("upload_save"))
+        self.btn_open_folder.setText(t("open_folder"))
+        self.btn_check_now.setText(t("check_now"))
+        self.btn_launch_civ4.setText(t("launch_civ4"))
+        self.btn_revert.setText(t("revert_selected"))
+        self.btn_stats.setText(t("statistics"))
+        self.btn_import_game.setText(t("import_game"))
+        self.btn_export_game.setText(t("export_game"))
+        self.btn_delete_game.setText(t("delete_game"))
+        self.btn_game_transport.setText(t("game_transport"))
+        self.status_label.setText(t("ready"))
+        # Refresh game view if a game is selected
+        if self.current_game:
+            self._update_game_view()
+        else:
+            self.header_label.setText(t("select_game"))
 
     def _on_download(self):
         """Download save from remote."""
@@ -907,7 +963,8 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(2000, lambda: self.status_label.setText("Gotowy"))
 
     def closeEvent(self, event):
-        """Close button (X) always quits the application."""
+        """Close button (X) always quits the application. Saves geometry."""
+        self._save_geometry()
         event.accept()
 
     def changeEvent(self, event):
@@ -935,6 +992,7 @@ class NewGameDialog(QDialog):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("Nowa gra")
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setMinimumWidth(450)
         self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
         self._init_ui()
@@ -1039,8 +1097,12 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("Ustawienia")
-        self.setMinimumSize(520, 480)
-        self.resize(540, 520)
+        # Remove the "?" button from title bar (useless, confuses users)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowContextHelpButtonHint
+        )
+        self.setMinimumSize(580, 560)
+        self.resize(640, 620)
         self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
         self._init_ui()
 
@@ -1065,8 +1127,15 @@ class SettingsDialog(QDialog):
 
     # --- Tab 1: General ---
     def _create_general_tab(self) -> QWidget:
+        from PyQt5.QtWidgets import QScrollArea
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
+        layout.setSpacing(10)
 
         # Player info
         player_group = QGroupBox("Gracz")
@@ -1144,7 +1213,8 @@ class SettingsDialog(QDialog):
         layout.addWidget(launch_group)
 
         layout.addStretch()
-        return tab
+        scroll.setWidget(tab)
+        return scroll
 
     # --- Tab 2: Transport ---
     def _create_transport_tab(self) -> QWidget:
@@ -1552,8 +1622,9 @@ class GameTransportDialog(QDialog):
         self.game = game
         self.all_games = all_games
         self.setWindowTitle(f"Transport: {game.name}")
-        self.setMinimumSize(520, 480)
-        self.resize(540, 520)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setMinimumSize(560, 500)
+        self.resize(600, 560)
         self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
         self._init_ui()
 
@@ -1791,6 +1862,7 @@ class GameStatsDialog(QDialog):
         self.config = config
         self.game = game
         self.setWindowTitle(t("stats_title", name=game.name))
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setMinimumSize(500, 450)
         self.resize(560, 500)
         self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))

@@ -32,6 +32,7 @@ DEFAULT_CHECK_INTERVAL_MINUTES = 5
 PUBLIC_KEYS = {
     "save_path", "check_interval_minutes", "dark_mode", "auto_send",
     "language", "civ4_path", "player_name", "player_email",
+    "window_geometry",
 }
 
 # Keys that are encrypted (sensitive — contain credentials)
