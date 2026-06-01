@@ -1,56 +1,81 @@
 # Civ4 PBEM Manager v4.0
 
-A desktop application for managing Play-By-Email (PBEM) games in Civilization 4: Beyond the Sword.
+<p align="center">
+  <img src="icon_preview.png" alt="Civ4 PBEM Manager" width="128"/>
+</p>
 
-> **Note**: This application was entirely written by AI (Claude/Kiro LLM). It is free to use, modify, and redistribute. Contributions, bug reports, and feature requests are welcome!
+<p align="center">
+  <strong>Stop clicking through menus. Start playing.</strong>
+</p>
 
-## Features
+---
 
-### Core
-- **Save transport**: FTP / SFTP / WebDAV / Email (per-game configuration)
-- **Multi-game support**: Run multiple parallel PBEM games
-- **Smart watchdog**: Auto-detects Civ4 saves by game name, uploads automatically or asks
-- **Auto-send mode**: Silent upload without popup — safe for fullscreen play
-- **Game statistics**: Per-player turn times, averages, fastest/slowest turns
-- **Turn calendar**: Displays in-game year (4000 BC → 2050 AD) based on game speed
-- **Turn revert**: Roll back to any previous turn with full history
-- **Multi-language**: Polish / English with runtime switching (no restart needed)
-- **Encrypted config**: Master password protects credentials on disk (AES-256)
-- **Single-instance guard**: Prevents multiple app copies from running
-- **System tray**: Minimize to tray, balloon notifications, sound alerts
-- **Dark/Light theme**: Runtime toggle
+## What is this?
 
-### Notifications
-- **Email (SMTP)**: Automatic "your turn!" emails with fully customizable templates
-- **In-app channel**: Flag files on transport server — no SMTP needed, works with any transport
-- **Reminder button**: Manually nudge the current player via email and/or in-app
-- **Auto-reminder**: Automatically remind after X days of inactivity
-- **Master switch**: Enable/disable all notifications at once
-- **Template editor**: Edit subject and body with one-click variable insertion (`{game}`, `{turn}`, `{from_player}`, `{to_player}`)
+Civilization 4: Beyond the Sword is a 20-year-old game with no built-in online multiplayer infrastructure worth speaking of. Yet thousands of people still play it — passing save files back and forth by email, Discord, or shared folders, manually tracking whose turn it is, manually launching the game, manually notifying the next player.
 
-### Civ4 Launcher
-- **Multi-edition support**: Steam, GOG, DVD — each with its own exe path
-- **Direct save loading**: `/fxsload=` parameter loads save directly into Civ4 (confirmed working on Steam/GOG/DVD)
-- **Edition picker dialog**: Colored buttons (Steam/GOG/DVD) when multiple editions installed
-- **File association**: Set Windows `.CivBeyondSwordSave` association for any edition directly from app (no admin rights needed)
-- **Remember choice**: Option to always use preferred edition
+**Civ4 PBEM Manager** automates all of that.
 
-### Game Management
-- **Export/Import** `.civ4pbem` files — share full game config with other players
-- **Import → replace global settings**: Optionally overwrite transport + SMTP with game's settings
-- **Player alias mapping**: Local nick ≠ game name — resolved transparently
-- **Edit game**: Change player emails, game speed, alias at any time
-- **Admin password**: Protect save deletion with a password
+You play your turn. The app detects the save, uploads it to your shared server, and emails (or pings via the app itself) the next player. They download it, launch Civ4, and play. No spreadsheets. No "hey did you get my save?" messages. No forgotten turns sitting in someone's inbox for a week.
+
+It was built entirely by AI (Claude / Kiro) as an experiment in what modern LLMs can produce when given a clear spec and a patient human to iterate with.
+
+---
+
+## What it does
+
+### The core loop
+- Watches your Civ4 save folder for new saves
+- Uploads them to a shared server (FTP, SFTP, WebDAV, or Email)
+- Notifies the next player — via email (SMTP) or directly through the app (no SMTP needed)
+- Downloads saves when it's your turn
+- Launches Civ4 with the right save, optionally loading it directly
+
+### Everything else
+- **Multi-game**: manage as many parallel PBEM games as you want
+- **Multi-edition**: Steam, GOG, DVD — each with its own path and launch method
+- **Direct save loading**: `/fxsload=` parameter skips the main menu entirely
+- **File association**: set Windows to open `.CivBeyondSwordSave` files with your preferred edition
+- **Turn history**: full log of every turn, with revert capability
+- **Game statistics**: who plays fastest, who takes the longest, average turn times
+- **Turn calendar**: shows in-game year (4000 BC → 2050 AD) everywhere in the UI
+- **Reminder system**: nudge the current player manually or automatically after X days
+- **In-app notifications**: flag files on the transport server — works without any email setup
+- **Encrypted config**: master password protects your server credentials on disk (AES-256)
+- **Export/Import**: share a `.civ4pbem` file with other players — they import it and are ready to go
+- **Polish / English UI**: runtime language switching, no restart needed
+- **Dark / Light theme**: because some of us play at night
+
+---
+
+## What it does NOT do
+
+This is important. The app is a **coordinator**, not a game client.
+
+- ❌ It does not modify Civ4 in any way
+- ❌ It does not host a game server
+- ❌ It does not handle simultaneous turns (hotseat only, not true multiplayer)
+- ❌ It does not work with mods that change the save format in incompatible ways
+- ❌ It does not guarantee `/fxsload=` works on your system — this depends on your Windows version, Civ4 version, and registry state. It works on most setups but not all.
+- ❌ It does not send notifications if you haven't configured a transport (you need somewhere to put the files)
+- ❌ It does not replace the need for all players to have the same mods installed
+- ❌ It is not a replacement for Pitboss or any real multiplayer infrastructure
+
+---
 
 ## Quick Start
 
-1. Run the app → **Settings** → set player name, email, save folder
-2. In **Settings → General**: configure your Civ4 installation (Steam/GOG/DVD)
-3. **+ New Game** → add players in turn order → select speed → configure transport
-4. **Export** the `.civ4pbem` file and share with other players
-5. Other players **Import** → pick their identity → done!
+1. Run the app → **Settings → General**
+2. Set your player name, email, save folder path
+3. Configure your Civ4 installation (Steam / GOG / DVD)
+4. **+ New Game** → add players in turn order → select game speed
+5. **Game transport...** → configure your shared server
+6. **Export** the `.civ4pbem` file → send it to other players
+7. Other players **Import** → pick their identity → done
 
-After setup: play your turn in Civ4 → watchdog auto-detects → uploads → notifies next player.
+After setup: play your turn in Civ4 → watchdog detects the save → uploads → notifies next player → they download and play.
+
+---
 
 ## Installation
 
@@ -59,15 +84,15 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Build Windows .exe
+### Build standalone .exe (Windows)
 
 ```bash
 build.bat
 ```
 
-Output: `dist/Civ4PBEMManager.exe` (~20-25 MB, with UPX ~15-18 MB)
+Output: `dist/Civ4PBEMManager.exe` (~20-25 MB, ~15-18 MB with UPX)
 
-## Requirements
+### Requirements
 
 - Python 3.10+
 - PyQt5 >= 5.15
@@ -76,67 +101,84 @@ Output: `dist/Civ4PBEMManager.exe` (~20-25 MB, with UPX ~15-18 MB)
 - cryptography >= 41.0
 - PyInstaller >= 6.0 (build only)
 
-## Documentation
+---
 
-- **[MANUAL.md](MANUAL.md)** — Full user manual (Polish)
-- **[CLAUDE_PROMPT.md](CLAUDE_PROMPT.md)** — Complete technical specification for AI/LLM regeneration
+## Features at a glance
+
+| Feature | Details |
+|---|---|
+| Transport | FTP, SFTP, WebDAV, Email (per-game) |
+| Notifications | SMTP email + in-app flag files |
+| Launcher | Steam / GOG / DVD, direct save load |
+| Languages | Polish, English (runtime switch) |
+| Security | AES-256 encrypted credentials |
+| History | Full turn log, revert to any turn |
+| Statistics | Per-player times, averages |
+| Calendar | In-game year display |
+| Reminders | Manual + auto after X days |
+
+---
 
 ## Changelog
 
 ### v4.0.0
-- Multi-edition Civ4 launcher (Steam/GOG/DVD) with edition picker dialog
-- Direct save loading via `/fxsload=` for all editions
-- Windows file association manager (no admin rights)
-- In-app notifications via transport flag files (no SMTP needed)
-- Notification master switch + two independent channels (SMTP / in-app)
-- Reminder button + auto-reminder after X days
-- Email template editor with variable-insert buttons
+- Multi-edition launcher (Steam/GOG/DVD) with colored picker dialog
+- Direct save loading via `/fxsload=` — confirmed working on Steam, GOG, DVD
+- Windows file association manager (no admin rights needed)
+- In-app notifications via transport flag files — no SMTP required
+- Notification master switch + two independent channels
+- Reminder button + auto-reminder after X days of inactivity
+- Email template editor with one-click variable insertion
 - Import game → optionally replace global transport/SMTP settings
-- Simplified settings: one global direct-load checkbox, edition paths disabled until enabled
+- Simplified settings: one global direct-load checkbox
 
 ### v3.0.0
-- Game statistics (per-player turn times, averages)
-- Turn calendar (in-game year display)
+- Game statistics and turn calendar
 - Auto-launch Civ4 with save
-- Multi-language UI (PL/EN, runtime switching)
-- Encrypted config (AES-256 master password)
+- Polish/English UI with runtime switching
+- AES-256 encrypted config
 - Single-instance guard
 - Player alias mapping
-- Turn revert with notifications
+- Turn revert with player notifications
 - Edit game dialog
 
 ---
 
 ## 🇵🇱 Polski
 
-Aplikacja desktopowa do obslugi gier Play-By-Email (PBEM) w Civilization 4: Beyond the Sword.
+### Po co to powstało?
 
-> **Uwaga**: Aplikacja zostala w calosci napisana przez AI (Claude/Kiro LLM). Jest darmowa, mozna ja dowolnie modyfikowac i rozpowszechniac.
+Civilization 4 to gra sprzed 20 lat, która nie ma żadnej sensownej infrastruktury do gry przez internet. A mimo to tysiące ludzi nadal w nią gra — przesyłając save'y mailem, przez Discorda albo współdzielone foldery, ręcznie śledząc czyja tura, ręcznie uruchamiając grę, ręcznie powiadamiając następnego gracza.
 
-### Glowne funkcje
+**Civ4 PBEM Manager** automatyzuje to wszystko.
 
-- Transport save'ow: FTP / SFTP / WebDAV / Email (konfiguracja per-gra)
-- Powiadomienia email i przez aplikacje (bez SMTP)
-- Przycisk ponaglenia gracza + automatyczne przypomnienia
-- Edytor szablonow maili z przyciskami wstawiania zmiennych
-- Obsluga wielu wersji Civ4 (Steam/GOG/DVD) z dialogiem wyboru
-- Bezposrednie ladowanie save'a przez `/fxsload=`
-- Ustawianie skojarzenia plikow `.CivBeyondSwordSave` bez uprawnien admina
-- Smart watchdog — automatyczne wykrywanie i wysylanie save'ow
-- Statystyki gry i kalendarz turowy
-- Szyfrowanie konfiguracji haslem glownym (AES-256)
-- Interfejs PL/EN z przelaczaniem w runtime
+Grasz swoją turę. Aplikacja wykrywa save, wysyła go na serwer i powiadamia następnego gracza — mailem albo bezpośrednio przez aplikację. Oni pobierają save, uruchamiają Civ4 i grają. Bez arkuszy kalkulacyjnych. Bez "hej, dostałeś mój save?". Bez tur leżących zapomniane w czyjejś skrzynce przez tydzień.
+
+### Czego to nie ogarnia?
+
+Aplikacja jest **koordynatorem**, nie klientem gry.
+
+- ❌ Nie modyfikuje Civ4 w żaden sposób
+- ❌ Nie hostuje serwera gry
+- ❌ Nie obsługuje jednoczesnych tur (tylko kolejkowe PBEM)
+- ❌ Nie gwarantuje że `/fxsload=` zadziała na Twoim systemie — zależy od wersji Windows, wersji Civ4 i stanu rejestru
+- ❌ Nie zastępuje konieczności posiadania tych samych modów przez wszystkich graczy
+- ❌ Nie działa bez skonfigurowanego transportu (potrzebujesz miejsca na pliki)
 
 ### Szybki start
 
-1. Uruchom → Ustawienia → podaj nick, email, folder save'ow
-2. Ustawienia → Ogolne → skonfiguruj wersje Civ4 (Steam/GOG/DVD)
-3. Nowa gra → dodaj graczy → wybierz predkosc → skonfiguruj transport
-4. Eksportuj `.civ4pbem` i wyslij innym graczom
-5. Graj ture → watchdog automatycznie wysle save i powiadomi nastepnego gracza
+1. Uruchom → Ustawienia → podaj nick, email, folder save'ów
+2. Ustawienia → Ogólne → skonfiguruj wersję Civ4 (Steam/GOG/DVD)
+3. Nowa gra → dodaj graczy → wybierz prędkość → skonfiguruj transport
+4. Eksportuj `.civ4pbem` i wyślij innym graczom
+5. Graj turę → watchdog automatycznie wyśle save i powiadomi następnego gracza
 
-Pelna instrukcja: **[MANUAL.md](MANUAL.md)**
+Pełna instrukcja: **[MANUAL.md](MANUAL.md)**
 
-## License
+---
 
-MIT
+## About
+
+Built entirely by AI (Claude / Kiro LLM) as an experiment in AI-assisted software development. The human provided the vision, tested the builds, and kept the AI on track. The AI wrote every line of code.
+
+Free to use, modify, and redistribute. MIT License.
