@@ -1,7 +1,7 @@
 # Civ4 PBEM Manager v4.0
 
 <p align="center">
-  <img src="icon_preview.png" alt="Civ4 PBEM Manager" width="256"/>
+  <img src="icon_preview.png" alt="Civ4 PBEM Manager" width="512"/>
 </p>
 
 <p align="center">
@@ -94,7 +94,7 @@ python main.py
 build.bat
 ```
 
-Output: `dist/Civ4PBEMManager.exe` (~20-25 MB, ~15-18 MB with UPX)
+Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 
 ### Requirements
 
