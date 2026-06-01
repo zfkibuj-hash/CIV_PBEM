@@ -1,7 +1,7 @@
 # Civ4 PBEM Manager v4.0
 
 <p align="center">
-  <img src="icon_preview.png" alt="Civ4 PBEM Manager" width="128"/>
+  <img src="icon_preview.png" alt="Civ4 PBEM Manager" width="256"/>
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@ Civilization 4: Beyond the Sword is a 20-year-old game with no built-in online m
 
 You play your turn. The app detects the save, uploads it to your shared server, and emails (or pings via the app itself) the next player. They download it, launch Civ4, and play. No spreadsheets. No "hey did you get my save?" messages. No forgotten turns sitting in someone's inbox for a week.
 
-It was built entirely by AI (Claude / Kiro) as an experiment in what modern LLMs can produce when given a clear spec and a patient human to iterate with.
+It was built entirely by AI (Claude / Kiro) as pure vibecoding for fun. The human provided the vision, tested the builds, and kept the AI on track. The AI wrote every line of code.
 
 ---
 
@@ -63,7 +63,11 @@ This is important. The app is a **coordinator**, not a game client.
 
 ---
 
-## Quick Start
+## Download
+
+**Windows .exe** is available in [Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases) -- no Python installation needed.
+
+Just download `Civ4PBEMManager.exe` and run it.
 
 1. Run the app → **Settings → General**
 2. Set your player name, email, save folder path
@@ -179,6 +183,8 @@ Pełna instrukcja: **[MANUAL.md](MANUAL.md)**
 
 ## About
 
-Built entirely by AI (Claude / Kiro LLM) as an experiment in AI-assisted software development. The human provided the vision, tested the builds, and kept the AI on track. The AI wrote every line of code.
+Built entirely by AI (Claude / Kiro LLM) as pure vibecoding for fun. The human provided the vision, tested the builds, and kept the AI on track. The AI wrote every line of code. The human has zero programming knowledge and cannot fix bugs or implement feature requests on their own.
+
+You are welcome to report bugs and suggest features in the Issues tab. Just know that fixes depend on AI assistance, not a developer sitting behind the keyboard. If you know Python and want to contribute, pull requests are very welcome.
 
 Free to use, modify, and redistribute. MIT License.
