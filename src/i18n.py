@@ -12,8 +12,8 @@ DEFAULT_LANGUAGE = "pl"
 _TRANSLATIONS: Dict[str, Dict[str, str]] = {
     # --- Main Window ---
     "app_title": {
-        "pl": "Civ4 PBEM Manager v4.0",
-        "en": "Civ4 PBEM Manager v4.0",
+        "pl": "Civ4 PBEM Manager v4.1",
+        "en": "Civ4 PBEM Manager v4.1",
     },
     "my_games": {
         "pl": "MOJE GRY",

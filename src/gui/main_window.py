@@ -41,7 +41,7 @@ class MainWindow(QMainWindow):
         self._minimize_to_tray = False  # Set to True by main.py when tray is available
         self._tray_icon = None  # Reference to TrayIcon, set by main.py
 
-        self.setWindowTitle("Civ4 PBEM Manager v4.0")
+        self.setWindowTitle("Civ4 PBEM Manager v4.1")
         self.setMinimumSize(800, 600)
         self.apply_theme()
         self._restore_geometry()

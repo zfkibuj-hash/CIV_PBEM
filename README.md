@@ -125,6 +125,20 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 
 ## Changelog
 
+### v4.1.0
+- Email autodiscover: wykrywa ustawienia serwera po adresie email (Mozilla autoconfig, MS Autodiscover, DNS SRV, TCP guess)
+- Presety dostawcow: Gmail, Outlook/Hotmail/Live, Yahoo Mail, iCloud Mail
+- Ostrzezenie o App Password dla Gmail/Yahoo/iCloud
+- POP3 support obok IMAP (fallback dla serwerow bez IMAP)
+- Jawny wybor zabezpieczenia: SSL / STARTTLS / Brak (per SMTP i IMAP/POP3)
+- Opcja usuwania wiadomosci po pobraniu save'a
+- System przypomnien: reczny przycisk + auto po X dniach
+- Powiadomienia przez aplikacje (flag files na serwerze, bez SMTP)
+- Master switch dla powiadomien + dwa niezalezne kanaly
+- Edytor szablonow maili z przyciskami wstawiania zmiennych
+- Poprawka czytelnosci tabeli statystyk w dark mode
+- Poprawka paska z nazwa gry w light mode
+
 ### v4.0.0
 - Multi-edition launcher (Steam/GOG/DVD) with colored picker dialog
 - Direct save loading via `/fxsload=` — confirmed working on Steam, GOG, DVD

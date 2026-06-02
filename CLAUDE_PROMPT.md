@@ -156,22 +156,15 @@ CIV_PBEM/
 - Subject: `[CIV4PBEM] {GameName} | {filename}`. IMAP filters by tag + game name
 
 #### 8. Email Notifications (separate from transport)
-- `EmailNotifier` sends "Your turn!" to next player after upload
-- Configurable independently from transport
-- **Shared mailbox model**: if notification SMTP host is empty, automatically uses transport email SMTP credentials (one email account does everything)
-- **Customizable templates** (`subject_template`, `body_template` in smtp config):
-  - Variables: `{game}`, `{turn}`, `{from_player}`, `{to_player}`
-  - Default: English template if not customized
-  - Stored in config under `smtp.subject_template` and `smtp.body_template`
-- **Credential fallback** (login/password ONLY, never host/port):
-  - If notification login empty → uses email transport SMTP login
-  - If password empty → uses email transport SMTP password
-  - Host and port: fallback to transport email SMTP if notification host empty
-- **Purge game emails** (`EmailTransport.purge_game(game_name)`):
-  - Deletes ALL emails matching `[CIV4PBEM] {game_name}` from mailbox via IMAP
-  - Uses IMAP search + `\Deleted` flag + `expunge()`
-  - Only affects the specific game — other games on same mailbox are safe
-  - `AppController.purge_game_emails(game)` → wrapper that checks transport type
+- `EmailNotifier` sends "Your turn!" and reminder emails to players
+- Two independent notification channels (both can be active simultaneously):
+  - **SMTP channel** (`notify_via_smtp`): sends email via configured SMTP
+  - **In-app channel** (`notify_via_app`): uploads `{GameName}_notify_{ToPlayer}.flag` to transport server; recipient's app picks it up on next check, shows tray popup, deletes flag
+- **Master switch** `notifications_enabled` — disables all notifications when False
+- **Auto-reminder**: `check_for_new_saves()` sends reminder after `reminder_auto_days` days of inactivity (tracked via `Game.last_reminder_sent`)
+- **Templates** (in smtp config): `subject_template`, `body_template`, `reminder_subject_template`, `reminder_body_template`. Variables: `{game}`, `{turn}`, `{from_player}`, `{to_player}`
+- **Shared mailbox model**: if notification SMTP host empty, falls back to transport email SMTP
+- **Credential fallback** (login/password only, never host/port)
 
 #### 9. GUI (PyQt5)
 
@@ -259,7 +252,7 @@ CIV_PBEM/
 - **`smtp`** includes: host, port, username, password, use_tls, from_address, **subject_template**, **body_template**, **reminder_subject_template**, **reminder_body_template**
 - `AppConfig.get_enabled_editions()` → list of enabled edition keys with exe_path set
 - `AppConfig.civ4_path` → legacy property, returns first enabled exe_path
-- App version: **v4.0.0**
+- App version: **v4.1.0**
 
 ### Important Design Decisions
 - Save filename = sender's name (who finished turn), not recipient
@@ -492,6 +485,26 @@ CIV_PBEM/
 - **No SMTP needed** — purely transport-based; all players must have `notify_via_app` enabled
 - **Coexists with SMTP**: both channels can be active simultaneously (independent checkboxes)
 - `BaseTransport.delete(filename, game_name)` — used to remove flag after reading
+
+#### 27. Email Transport v2 (`src/transport/email_transport.py` + `src/transport/autodiscover.py`)
+- **Protocols**: IMAP (recommended) or POP3 -- selectable via `incoming_protocol` ("imap"/"pop3")
+- **Security per connection**: `SSL` (IMAP4_SSL/SMTP_SSL), `STARTTLS` (starttls() upgrade), `None`
+  - Keys: `smtp_security`, `imap_security`, `pop3_security` in email config dict
+  - Backwards compat: `smtp_use_tls`/`imap_use_ssl` still accepted
+- **Delete after download**: `delete_after_download` bool -- marks `\Deleted` + expunge (IMAP) or `DELE` (POP3)
+- **Autodiscover** (`src/transport/autodiscover.py`):
+  - `discover(email_address, timeout)` → `EmailServerConfig(imap: ServerConfig, smtp: ServerConfig, source: str)`
+  - `ServerConfig(host, port, security)` dataclass
+  - Discovery methods in order: known presets → Mozilla autoconfig XML (+ Mozilla ISPDB) → MS Autodiscover XML → DNS SRV via dnspython → TCP hostname guesses
+  - Returns partial result if only some servers found; user can override any value
+- **Settings UI** (email section in Transport tab, inside QScrollArea):
+  - Autodiscover row: email field + "Wykryj" button + status label (green=ok, orange=partial, red=failed)
+  - Provider presets dropdown: Gmail / Outlook-Hotmail-Live / Yahoo Mail / iCloud Mail / custom
+  - App Password hint shown for Gmail/Yahoo/iCloud (orange warning)
+  - Port + Security QComboBox side by side for SMTP, IMAP, POP3
+  - Protocol selector (IMAP recommended / POP3) shows appropriate fields
+  - Delete after download checkbox
+- **New dependencies**: `dnspython>=2.4`, `requests>=2.31`
 
 ### Output Requirements
 Generate ALL files listed in the project structure. The result should be:
