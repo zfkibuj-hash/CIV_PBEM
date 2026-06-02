@@ -103,6 +103,13 @@ QLabel#banner_waiting {
     padding: 8px 16px;
     font-size: 10pt;
 }
+QLabel#game_header {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    padding: 12px 20px;
+    font-size: 12pt;
+    font-weight: bold;
+}
 QTextEdit {
     background-color: #252536;
     border: 1px solid #555;
@@ -134,6 +141,31 @@ QTabBar::tab:selected {
 }
 QTabBar::tab:hover:!selected {
     background-color: #383838;
+}
+QTableWidget {
+    background-color: #252536;
+    border: 1px solid #555;
+    border-radius: 4px;
+    gridline-color: #444;
+    color: #e0e0e0;
+}
+QTableWidget::item {
+    padding: 4px 8px;
+    color: #e0e0e0;
+}
+QTableWidget::item:selected {
+    background-color: #1a3a1a;
+    color: #e0e0e0;
+}
+QHeaderView::section {
+    background-color: #333350;
+    color: #e0e0e0;
+    border: 1px solid #555;
+    padding: 4px 8px;
+    font-weight: bold;
+}
+QHeaderView::section:horizontal {
+    border-top: none;
 }
 """
 
@@ -240,6 +272,13 @@ QLabel#banner_waiting {
     padding: 8px 16px;
     font-size: 10pt;
 }
+QLabel#game_header {
+    background-color: #e0e0e0;
+    color: #212121;
+    padding: 12px 20px;
+    font-size: 12pt;
+    font-weight: bold;
+}
 QTextEdit {
     background-color: #ffffff;
     border: 1px solid #bdbdbd;
@@ -274,6 +313,31 @@ QTabBar::tab:hover:!selected {
 }
 QCheckBox {
     color: #212121;
+}
+QTableWidget {
+    background-color: #ffffff;
+    border: 1px solid #bdbdbd;
+    border-radius: 4px;
+    gridline-color: #e0e0e0;
+    color: #212121;
+}
+QTableWidget::item {
+    padding: 4px 8px;
+    color: #212121;
+}
+QTableWidget::item:selected {
+    background-color: #e8f5e9;
+    color: #212121;
+}
+QHeaderView::section {
+    background-color: #e0e0e0;
+    color: #212121;
+    border: 1px solid #bdbdbd;
+    padding: 4px 8px;
+    font-weight: bold;
+}
+QHeaderView::section:horizontal {
+    border-top: none;
 }
 """
 

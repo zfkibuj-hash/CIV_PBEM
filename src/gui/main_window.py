@@ -151,9 +151,9 @@ class MainWindow(QMainWindow):
 
         # Header
         self.header_label = QLabel(t("select_game"))
+        self.header_label.setObjectName("game_header")
         self.header_label.setStyleSheet(
-            "background-color: #2d2d2d; padding: 12px 20px; "
-            "font-size: 12pt; font-weight: bold;"
+            "padding: 12px 20px; font-size: 12pt; font-weight: bold;"
         )
         right_layout.addWidget(self.header_label)
 
