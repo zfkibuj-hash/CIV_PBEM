@@ -1,0 +1,824 @@
+"""
+SettingsDialog — application settings dialog with tabbed layout.
+"""
+import logging
+
+from PyQt5.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
+    QWidget, QLabel, QLineEdit, QSpinBox, QComboBox,
+    QGroupBox, QPushButton, QDialogButtonBox, QTextEdit,
+    QCheckBox, QFileDialog, QMessageBox, QFrame,
+)
+from PyQt5.QtCore import Qt
+
+from src.config import AppConfig
+from src.i18n import t, set_language
+from src.gui.styles import get_style_for_theme
+from src.launcher import (
+    detect_civ4_for_edition, detect_save_path, detect_steam_path,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class SettingsDialog(QDialog):
+    """Application settings dialog with tabbed layout."""
+
+    def __init__(self, config: AppConfig, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.setWindowTitle(t("settings_title"))
+        # Remove the "?" button from title bar (useless, confuses users)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowContextHelpButtonHint
+        )
+        self.setMinimumSize(580, 560)
+        self.resize(640, 620)
+        self.setStyleSheet(get_style_for_theme(self.config.get("dark_mode", True)))
+        self._init_ui()
+
+    def _init_ui(self):
+        from PyQt5.QtWidgets import QTabWidget
+        layout = QVBoxLayout(self)
+
+        tabs = QTabWidget()
+        tabs.addTab(self._create_general_tab(), t("tab_general"))
+        tabs.addTab(self._create_transport_tab(), t("tab_transport"))
+        tabs.addTab(self._create_notifications_tab(), t("tab_notifications"))
+        tabs.addTab(self._create_security_tab(), t("tab_security"))
+        layout.addWidget(tabs)
+
+        # Buttons at the bottom (always visible)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Save | QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self._save_settings)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    # --- Tab 1: General ---
+    def _create_general_tab(self) -> QWidget:
+        from PyQt5.QtWidgets import QScrollArea
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(10)
+
+        # Player info
+        player_group = QGroupBox(t("stats_player_name"))
+        player_form = QFormLayout(player_group)
+        self.player_name_edit = QLineEdit(self.config.player_name)
+        player_form.addRow(t("player_name"), self.player_name_edit)
+        self.player_email_edit = QLineEdit(self.config.player_email)
+        player_form.addRow(t("player_email"), self.player_email_edit)
+        layout.addWidget(player_group)
+
+        # Save path
+        path_group = QGroupBox(t("save_path"))
+        path_layout = QHBoxLayout(path_group)
+        self.path_edit = QLineEdit(self.config.save_path)
+        path_layout.addWidget(self.path_edit)
+        btn_browse = QPushButton(t("browse"))
+        btn_browse.clicked.connect(self._browse_path)
+        path_layout.addWidget(btn_browse)
+        btn_detect_saves = QPushButton(t("detect_civ4"))
+        btn_detect_saves.clicked.connect(self._detect_save_path)
+        path_layout.addWidget(btn_detect_saves)
+        layout.addWidget(path_group)
+
+        # Check interval
+        interval_group = QGroupBox(t("check_interval"))
+        interval_form = QFormLayout(interval_group)
+        self.check_interval = QSpinBox()
+        self.check_interval.setRange(1, 60)
+        self.check_interval.setValue(self.config.check_interval_minutes)
+        self.check_interval.setSuffix(" min")
+        interval_form.addRow(t("check_interval"), self.check_interval)
+        layout.addWidget(interval_group)
+
+        # Appearance & Language
+        appearance_group = QGroupBox(t("settings_appearance"))
+        appearance_form = QFormLayout(appearance_group)
+        self.dark_mode_check = QCheckBox(t("dark_mode"))
+        self.dark_mode_check.setChecked(self.config.get("dark_mode", True))
+        appearance_form.addRow(self.dark_mode_check)
+
+        self.auto_send_check = QCheckBox(t("auto_send"))
+        self.auto_send_check.setChecked(self.config.get("auto_send", False))
+        appearance_form.addRow(self.auto_send_check)
+
+        # Language selector
+        self.language_combo = QComboBox()
+        self.language_combo.addItem("Polski", "pl")
+        self.language_combo.addItem("English", "en")
+        current_lang = self.config.language
+        idx = 0 if current_lang == "pl" else 1
+        self.language_combo.setCurrentIndex(idx)
+        appearance_form.addRow(t("language"), self.language_combo)
+
+        layout.addWidget(appearance_group)
+
+        # ---- Civ4 BTS installations (multi-edition) ----
+        installs_group = QGroupBox(t("civ4_installations_group"))
+        installs_layout = QVBoxLayout(installs_group)
+        installs_layout.setSpacing(6)
+
+        installs = self.config.civ4_installations
+        self._edition_widgets = {}  # edition -> dict of widgets
+
+        EDITION_LABELS = {
+            "steam": t("civ4_edition_steam"),
+            "gog":   t("civ4_edition_gog"),
+            "dvd":   t("civ4_edition_dvd"),
+        }
+
+        for edition in ("steam", "gog", "dvd"):
+            cfg = installs.get(edition, {})
+            ed_group = QGroupBox(EDITION_LABELS[edition])
+            ed_form = QFormLayout(ed_group)
+            ed_form.setSpacing(4)
+
+            # Enabled checkbox
+            enabled_cb = QCheckBox(t("edition_enabled"))
+            enabled_cb.setChecked(cfg.get("enabled", False))
+            ed_form.addRow(enabled_cb)
+
+            # exe path row -- disabled until checkbox ticked
+            exe_layout = QHBoxLayout()
+            exe_edit = QLineEdit(cfg.get("exe_path", ""))
+            exe_edit.setPlaceholderText("C:\\...\\Civ4BeyondSword.exe")
+            exe_edit.setEnabled(cfg.get("enabled", False))
+            exe_layout.addWidget(exe_edit)
+
+            btn_browse_ed = QPushButton(t("browse"))
+            btn_browse_ed.setEnabled(cfg.get("enabled", False))
+            btn_browse_ed.clicked.connect(
+                lambda checked, e=exe_edit: self._browse_edition_exe(e))
+            exe_layout.addWidget(btn_browse_ed)
+
+            btn_detect_ed = QPushButton(t("detect_for_edition"))
+            btn_detect_ed.setEnabled(cfg.get("enabled", False))
+            btn_detect_ed.clicked.connect(
+                lambda checked, ed=edition, e=exe_edit: self._detect_edition_exe(ed, e))
+            exe_layout.addWidget(btn_detect_ed)
+
+            ed_form.addRow(t("edition_exe_path"), exe_layout)
+
+            # Wire checkbox -> enable/disable path fields
+            def _toggle_edition(state, e=exe_edit, bb=btn_browse_ed, bd=btn_detect_ed):
+                e.setEnabled(bool(state))
+                bb.setEnabled(bool(state))
+                bd.setEnabled(bool(state))
+            enabled_cb.stateChanged.connect(_toggle_edition)
+
+            installs_layout.addWidget(ed_group)
+
+            self._edition_widgets[edition] = {
+                "enabled": enabled_cb,
+                "exe_edit": exe_edit,
+                "direct_cb": None,
+                "steam_exe_edit": None,
+                "app_id_edit": None,
+            }
+
+        # Global direct load checkbox -- applies to all editions
+        self.direct_load_global_check = QCheckBox(t("edition_direct_load"))
+        self.direct_load_global_check.setChecked(
+            self.config.get("direct_load_global", False))
+        installs_layout.addWidget(self.direct_load_global_check)
+
+        # Preferred edition when multiple enabled
+        pref_layout = QHBoxLayout()
+        pref_layout.addWidget(QLabel(t("preferred_edition")))
+        self.preferred_edition_combo = QComboBox()
+        self.preferred_edition_combo.addItem(t("preferred_edition_ask"), "")
+        self.preferred_edition_combo.addItem(t("civ4_edition_steam"), "steam")
+        self.preferred_edition_combo.addItem(t("civ4_edition_gog"), "gog")
+        self.preferred_edition_combo.addItem(t("civ4_edition_dvd"), "dvd")
+        pref_val = self.config.preferred_edition
+        pref_idx = self.preferred_edition_combo.findData(pref_val)
+        self.preferred_edition_combo.setCurrentIndex(pref_idx if pref_idx >= 0 else 0)
+        pref_layout.addWidget(self.preferred_edition_combo)
+        pref_layout.addStretch()
+        installs_layout.addLayout(pref_layout)
+
+        # --- File association ---
+        from src.launcher import get_current_file_association
+        assoc_group = QGroupBox(t("file_assoc_group"))
+        assoc_layout = QVBoxLayout(assoc_group)
+
+        current_assoc = get_current_file_association() or t("file_assoc_none")
+        assoc_current_lbl = QLabel(f"{t('file_assoc_current')} {current_assoc}")
+        assoc_current_lbl.setWordWrap(True)
+        assoc_current_lbl.setStyleSheet("font-size: 8pt; color: #9e9e9e;")
+        assoc_layout.addWidget(assoc_current_lbl)
+
+        assoc_hint = QLabel(t("file_assoc_set"))
+        assoc_hint.setStyleSheet("font-size: 9pt;")
+        assoc_layout.addWidget(assoc_hint)
+
+        assoc_btn_row = QHBoxLayout()
+        ASSOC_COLORS = {"steam": "#1b5e20", "gog": "#0d47a1", "dvd": "#4a148c"}
+        for ed in ("steam", "gog", "dvd"):
+            lbl = EDITION_LABELS[ed]
+            btn_a = QPushButton(lbl)
+            btn_a.setMinimumHeight(36)
+            c = ASSOC_COLORS[ed]
+            btn_a.setStyleSheet(
+                f"background-color: {c}; color: white; font-weight: bold; border-radius: 4px;")
+            btn_a.clicked.connect(
+                lambda checked, e=ed: self._set_file_association(e))
+            assoc_btn_row.addWidget(btn_a)
+        assoc_layout.addLayout(assoc_btn_row)
+
+        installs_layout.addWidget(assoc_group)
+        layout.addWidget(installs_group)
+
+        layout.addStretch()
+        scroll.setWidget(tab)
+        return scroll
+
+    def _browse_edition_exe(self, target_edit):
+        """Browse for exe and set into target_edit."""
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Wybierz plik .exe", target_edit.text(),
+            "Executable (*.exe);;All Files (*)"
+        )
+        if filepath:
+            target_edit.setText(filepath)
+
+    def _detect_edition_exe(self, edition: str, target_edit):
+        """Auto-detect Civ4 exe for a specific edition."""
+        detected = detect_civ4_for_edition(edition)
+        if detected:
+            target_edit.setText(detected)
+            QMessageBox.information(self, "OK", t("civ4_detected", path=detected))
+        else:
+            QMessageBox.information(self, t("info"), t("civ4_not_detected"))
+
+    def _detect_steam_into_widget(self):
+        """Auto-detect Steam.exe and fill into Steam edition's steam_exe field."""
+        detected = detect_steam_path()
+        if detected:
+            widgets = self._edition_widgets.get("steam", {})
+            if widgets.get("steam_exe_edit"):
+                widgets["steam_exe_edit"].setText(detected)
+            QMessageBox.information(self, "OK", t("steam_detected", path=detected))
+        else:
+            QMessageBox.information(self, t("info"), t("steam_not_detected"))
+
+    def _set_file_association(self, edition: str):
+        """Set Windows file association for .CivBeyondSwordSave for the given edition."""
+        from src.launcher import set_file_association, get_current_file_association
+
+        widgets = self._edition_widgets.get(edition, {})
+        exe_path = widgets["exe_edit"].text().strip() if widgets.get("exe_edit") else ""
+        steam_exe = ""
+        app_id = "8800"
+        if edition == "steam":
+            steam_exe = widgets["steam_exe_edit"].text().strip() if widgets.get("steam_exe_edit") else ""
+            app_id = widgets["app_id_edit"].text().strip() if widgets.get("app_id_edit") else "8800"
+        success, result = set_file_association(
+            edition=edition,
+            exe_path=exe_path,
+            steam_path=steam_exe,
+            steam_app_id=app_id or "8800",
+        )
+        if success:
+            QMessageBox.information(self, "OK", t("file_assoc_ok", cmd=result))
+        else:
+            msg = t(result) if result in (
+                "civ4_not_found", "steam_not_found",
+                "registry_windows_only", "registry_permission_error"
+            ) else t("file_assoc_error", error=result)
+            QMessageBox.warning(self, t("error"), msg)
+
+    # --- Tab 2: Transport ---
+    def _create_transport_tab(self) -> QWidget:
+        from PyQt5.QtWidgets import QScrollArea
+
+        # If config is locked, show lock message instead of form
+        if not self.config.is_unlocked:
+            locked_tab = QWidget()
+            locked_layout = QVBoxLayout(locked_tab)
+            locked_layout.addStretch()
+            lock_label = QLabel(f"\U0001f512 {t('transport_locked')}")
+            lock_label.setAlignment(Qt.AlignCenter)
+            lock_label.setStyleSheet("font-size: 11pt; color: #ff9800; padding: 40px;")
+            locked_layout.addWidget(lock_label)
+            locked_layout.addStretch()
+            return locked_tab
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(8)
+
+        tc = self.config.transport_config
+
+        # Transport type selector
+        type_group = QGroupBox(t("transport_method"))
+        type_form = QFormLayout(type_group)
+        self.transport_type = QComboBox()
+        self.transport_type.addItems(["ftp", "sftp", "webdav", "email"])
+        self.transport_type.setCurrentText(tc.get("type", "ftp"))
+        self.transport_type.currentTextChanged.connect(self._on_transport_type_changed)
+        type_form.addRow(t("transport_type_label"), self.transport_type)
+
+        self.ssl_ignore_check = QCheckBox(t("ssl_ignore"))
+        self.ssl_ignore_check.setChecked(tc.get("ignore_ssl_errors", True))
+        type_form.addRow(self.ssl_ignore_check)
+
+        layout.addWidget(type_group)
+
+        # File-based transport settings (FTP/SFTP/WebDAV)
+        self.file_transport_group = QGroupBox(t("file_transport_group"))
+        file_form = QFormLayout(self.file_transport_group)
+
+        self.transport_host = QLineEdit(tc.get("host", ""))
+        self.transport_host.setPlaceholderText("np. ftp.mojserwer.pl")
+        file_form.addRow(t("field_host"), self.transport_host)
+
+        self.transport_port = QSpinBox()
+        self.transport_port.setRange(1, 65535)
+        self.transport_port.setValue(tc.get("port", 21))
+        file_form.addRow(t("field_port"), self.transport_port)
+
+        self.transport_user = QLineEdit(tc.get("username", ""))
+        file_form.addRow(t("field_login"), self.transport_user)
+
+        self.transport_pass = QLineEdit(tc.get("password", ""))
+        self.transport_pass.setEchoMode(QLineEdit.Password)
+        file_form.addRow(t("field_password"), self.transport_pass)
+
+        self.transport_dir = QLineEdit(tc.get("remote_dir", "/civ4pbem"))
+        file_form.addRow(t("field_remote_dir"), self.transport_dir)
+
+        layout.addWidget(self.file_transport_group)
+
+        # Email transport settings (SMTP + IMAP)
+        self.email_transport_group = QGroupBox(t("email_transport_group"))
+        email_form = QFormLayout(self.email_transport_group)
+        email_form.setSpacing(6)
+
+        ec = tc.get("email", {})
+
+        self.et_mode = QComboBox()
+        self.et_mode.addItems(["shared", "individual"])
+        self.et_mode.setCurrentText(ec.get("mode", "shared"))
+        email_form.addRow(t("field_mode"), self.et_mode)
+
+        self.et_shared_email = QLineEdit(ec.get("shared_email", ""))
+        self.et_shared_email.setPlaceholderText("wspoldzielona skrzynka, np. civ4pbem@...")
+        email_form.addRow(t("field_shared_mailbox"), self.et_shared_email)
+
+        self.et_smtp_host = QLineEdit(ec.get("smtp_host", ""))
+        self.et_smtp_host.setPlaceholderText("np. smtp.gmail.com")
+        email_form.addRow("SMTP host:", self.et_smtp_host)
+
+        self.et_smtp_port = QSpinBox()
+        self.et_smtp_port.setRange(1, 65535)
+        self.et_smtp_port.setValue(ec.get("smtp_port", 587))
+        email_form.addRow("SMTP port:", self.et_smtp_port)
+
+        self.et_smtp_user = QLineEdit(ec.get("smtp_user", ""))
+        email_form.addRow("SMTP login:", self.et_smtp_user)
+
+        self.et_smtp_pass = QLineEdit(ec.get("smtp_password", ""))
+        self.et_smtp_pass.setEchoMode(QLineEdit.Password)
+        email_form.addRow("SMTP " + t("field_password"), self.et_smtp_pass)
+
+        self.et_imap_host = QLineEdit(ec.get("imap_host", ""))
+        self.et_imap_host.setPlaceholderText("np. imap.gmail.com")
+        email_form.addRow("IMAP host:", self.et_imap_host)
+
+        self.et_imap_port = QSpinBox()
+        self.et_imap_port.setRange(1, 65535)
+        self.et_imap_port.setValue(ec.get("imap_port", 993))
+        email_form.addRow("IMAP port:", self.et_imap_port)
+
+        self.et_imap_user = QLineEdit(ec.get("imap_user", ""))
+        email_form.addRow("IMAP login:", self.et_imap_user)
+
+        self.et_imap_pass = QLineEdit(ec.get("imap_password", ""))
+        self.et_imap_pass.setEchoMode(QLineEdit.Password)
+        email_form.addRow("IMAP " + t("field_password"), self.et_imap_pass)
+
+        self.et_from_address = QLineEdit(ec.get("from_address", ""))
+        self.et_from_address.setPlaceholderText("adres nadawcy (opcjonalnie)")
+        email_form.addRow(t("field_from"), self.et_from_address)
+
+        et_warning = QLabel(f"\u26a0 {t('email_warning')}")
+        et_warning.setStyleSheet("color: #ff9800; font-size: 9pt;")
+        email_form.addRow(et_warning)
+
+        layout.addWidget(self.email_transport_group)
+
+        # Show/hide based on current type
+        self._on_transport_type_changed(self.transport_type.currentText())
+
+        layout.addStretch()
+        scroll.setWidget(tab)
+        return scroll
+
+    # --- Tab 3: Notifications ---
+    def _create_notifications_tab(self) -> QWidget:
+        # If config is locked, show lock message
+        if not self.config.is_unlocked:
+            locked_tab = QWidget()
+            locked_layout = QVBoxLayout(locked_tab)
+            locked_layout.addStretch()
+            lock_label = QLabel(f"\U0001f512 {t('smtp_locked')}")
+            lock_label.setAlignment(Qt.AlignCenter)
+            lock_label.setStyleSheet("font-size: 11pt; color: #ff9800; padding: 40px;")
+            locked_layout.addWidget(lock_label)
+            locked_layout.addStretch()
+            return locked_tab
+
+        from PyQt5.QtWidgets import QScrollArea
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(10)
+
+        sc = self.config.smtp_config
+
+        # --- Master switch ---
+        self.notifications_enabled_check = QCheckBox(t("notifications_master_switch"))
+        self.notifications_enabled_check.setChecked(
+            self.config.get("notifications_enabled", True))
+        self.notifications_enabled_check.setStyleSheet("font-weight: bold; font-size: 10pt;")
+        layout.addWidget(self.notifications_enabled_check)
+
+        # Container that gets enabled/disabled by master switch
+        notif_container = QWidget()
+        notif_layout = QVBoxLayout(notif_container)
+        notif_layout.setContentsMargins(0, 0, 0, 0)
+        notif_layout.setSpacing(10)
+
+        # --- Channels ---
+        channels_group = QGroupBox(t("tab_notifications"))
+        channels_layout = QVBoxLayout(channels_group)
+
+        self.notify_via_smtp_check = QCheckBox(t("notify_via_smtp"))
+        self.notify_via_smtp_check.setChecked(self.config.get("notify_via_smtp", True))
+        channels_layout.addWidget(self.notify_via_smtp_check)
+
+        self.notify_via_app_check = QCheckBox(t("notify_via_app"))
+        self.notify_via_app_check.setChecked(self.config.get("notify_via_app", False))
+        channels_layout.addWidget(self.notify_via_app_check)
+
+        app_hint = QLabel(f"  \u2139 {t('notify_via_app_hint')}")
+        app_hint.setWordWrap(True)
+        app_hint.setStyleSheet("color: #9e9e9e; font-size: 8pt;")
+        channels_layout.addWidget(app_hint)
+
+        notif_layout.addWidget(channels_group)
+
+        # --- SMTP settings (shown when SMTP channel enabled) ---
+        self.smtp_settings_group = QGroupBox(t("notifications_group"))
+        smtp_form = QFormLayout(self.smtp_settings_group)
+        smtp_form.setSpacing(8)
+
+        self.smtp_host = QLineEdit(sc.get("host", ""))
+        self.smtp_host.setPlaceholderText("np. smtp.gmail.com")
+        smtp_form.addRow("Host SMTP:", self.smtp_host)
+
+        self.smtp_port = QSpinBox()
+        self.smtp_port.setRange(1, 65535)
+        self.smtp_port.setValue(sc.get("port", 587))
+        smtp_form.addRow(t("field_port"), self.smtp_port)
+
+        self.smtp_user = QLineEdit(sc.get("username", ""))
+        self.smtp_user.setPlaceholderText(t("notification_empty_hint"))
+        smtp_form.addRow(t("field_login"), self.smtp_user)
+
+        self.smtp_pass = QLineEdit(sc.get("password", ""))
+        self.smtp_pass.setEchoMode(QLineEdit.Password)
+        self.smtp_pass.setPlaceholderText(t("notification_empty_hint"))
+        smtp_form.addRow(t("field_password"), self.smtp_pass)
+
+        self.smtp_from = QLineEdit(sc.get("from_address", ""))
+        self.smtp_from.setPlaceholderText(t("notification_empty_hint"))
+        smtp_form.addRow(t("field_from"), self.smtp_from)
+
+        info_lbl = QLabel(t("notifications_info"))
+        info_lbl.setWordWrap(True)
+        info_lbl.setStyleSheet("color: #9e9e9e; font-size: 8pt;")
+        smtp_form.addRow(info_lbl)
+
+        notif_layout.addWidget(self.smtp_settings_group)
+
+        # --- Message templates ---
+        templates_group = QGroupBox(t("notif_templates_group"))
+        tpl_layout = QVBoxLayout(templates_group)
+        tpl_layout.setSpacing(8)
+
+        VARS = ["{game}", "{turn}", "{from_player}", "{to_player}"]
+
+        def _make_var_buttons(target_widget):
+            """Return a row of variable-insert buttons for a QLineEdit or QTextEdit."""
+            row = QHBoxLayout()
+            hint = QLabel(t("notif_template_hint"))
+            hint.setStyleSheet("color: #9e9e9e; font-size: 8pt;")
+            row.addWidget(hint)
+            for var in VARS:
+                btn = QPushButton(var)
+                btn.setMaximumWidth(90)
+                btn.setStyleSheet("font-size: 8pt; padding: 2px 4px;")
+                if isinstance(target_widget, QTextEdit):
+                    btn.clicked.connect(
+                        lambda checked, v=var, w=target_widget:
+                        w.insertPlainText(v))
+                else:
+                    btn.clicked.connect(
+                        lambda checked, v=var, w=target_widget:
+                        w.insert(v))
+                row.addWidget(btn)
+            row.addStretch()
+            return row
+
+        # Turn subject
+        tpl_layout.addWidget(QLabel(t("notif_subject_template")))
+        self.smtp_subject_template = QLineEdit(sc.get("subject_template", ""))
+        self.smtp_subject_template.setPlaceholderText(
+            "[Civ4 PBEM] {game} - Your turn! (Turn {turn})")
+        tpl_layout.addWidget(self.smtp_subject_template)
+        tpl_layout.addLayout(_make_var_buttons(self.smtp_subject_template))
+
+        # Turn body
+        tpl_layout.addWidget(QLabel(t("notif_body_template")))
+        self.smtp_body_template = QTextEdit()
+        self.smtp_body_template.setPlainText(sc.get("body_template", ""))
+        self.smtp_body_template.setPlaceholderText(
+            "Hi {to_player}!\n\n{from_player} finished turn {turn} in {game}.\nYour turn!")
+        self.smtp_body_template.setFixedHeight(80)
+        tpl_layout.addWidget(self.smtp_body_template)
+        tpl_layout.addLayout(_make_var_buttons(self.smtp_body_template))
+
+        # Reminder subject
+        tpl_layout.addWidget(QLabel(t("notif_reminder_subject_template")))
+        self.smtp_reminder_subject = QLineEdit(sc.get("reminder_subject_template", ""))
+        self.smtp_reminder_subject.setPlaceholderText(
+            "[Civ4 PBEM] {game} - Reminder: your turn! (Turn {turn})")
+        tpl_layout.addWidget(self.smtp_reminder_subject)
+        tpl_layout.addLayout(_make_var_buttons(self.smtp_reminder_subject))
+
+        # Reminder body
+        tpl_layout.addWidget(QLabel(t("notif_reminder_body_template")))
+        self.smtp_reminder_body = QTextEdit()
+        self.smtp_reminder_body.setPlainText(sc.get("reminder_body_template", ""))
+        self.smtp_reminder_body.setPlaceholderText(
+            "Hi {to_player}!\n\nJust a reminder -- it's your turn in {game}!\nTurn: {turn}")
+        self.smtp_reminder_body.setFixedHeight(80)
+        tpl_layout.addWidget(self.smtp_reminder_body)
+        tpl_layout.addLayout(_make_var_buttons(self.smtp_reminder_body))
+
+        notif_layout.addWidget(templates_group)
+
+        # --- Auto-reminder ---
+        reminder_group = QGroupBox(t("reminder_auto_group"))
+        reminder_form = QFormLayout(reminder_group)
+        reminder_form.setSpacing(8)
+
+        self.reminder_auto_check = QCheckBox(t("reminder_auto_enabled"))
+        self.reminder_auto_check.setChecked(self.config.get("reminder_auto_enabled", False))
+        reminder_form.addRow(self.reminder_auto_check)
+
+        self.reminder_auto_days = QSpinBox()
+        self.reminder_auto_days.setRange(1, 30)
+        self.reminder_auto_days.setValue(self.config.get("reminder_auto_days", 2))
+        self.reminder_auto_days.setSuffix(
+            " dni" if self.config.language == "pl" else " days")
+        reminder_form.addRow(t("reminder_auto_days"), self.reminder_auto_days)
+
+        notif_layout.addWidget(reminder_group)
+        notif_layout.addStretch()
+
+        layout.addWidget(notif_container)
+
+        # Wire master switch -> enable/disable container
+        def _toggle_notif(state):
+            notif_container.setEnabled(bool(state))
+        self.notifications_enabled_check.stateChanged.connect(_toggle_notif)
+        notif_container.setEnabled(self.notifications_enabled_check.isChecked())
+
+        # Wire SMTP channel -> show/hide SMTP settings
+        def _toggle_smtp(state):
+            self.smtp_settings_group.setEnabled(bool(state))
+            templates_group.setEnabled(bool(state))
+        self.notify_via_smtp_check.stateChanged.connect(_toggle_smtp)
+        _toggle_smtp(self.notify_via_smtp_check.isChecked())
+
+        scroll.setWidget(tab)
+        return scroll
+
+    # --- Tab 4: Security ---
+    def _create_security_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # Status
+        status_group = QGroupBox(t("tab_security"))
+        status_layout = QVBoxLayout(status_group)
+
+        if self.config.has_master_password:
+            if self.config.is_unlocked:
+                status_label = QLabel(f"\U0001f513 {t('security_status_unlocked')}")
+                status_label.setStyleSheet("color: #66bb6a; font-size: 10pt;")
+            else:
+                status_label = QLabel(f"\U0001f512 {t('security_status_locked')}")
+                status_label.setStyleSheet("color: #ff9800; font-size: 10pt;")
+        else:
+            status_label = QLabel(f"\u26a0 {t('security_no_password')}")
+            status_label.setStyleSheet("color: #ef5350; font-size: 10pt;")
+
+        status_layout.addWidget(status_label)
+        layout.addWidget(status_group)
+
+        # Set / Change password
+        password_group = QGroupBox(t("master_password_group"))
+        password_form = QFormLayout(password_group)
+
+        self.new_password_edit = QLineEdit()
+        self.new_password_edit.setEchoMode(QLineEdit.Password)
+        self.new_password_edit.setPlaceholderText(t("new_password_placeholder"))
+        password_form.addRow(t("new_password"), self.new_password_edit)
+
+        self.confirm_password_edit = QLineEdit()
+        self.confirm_password_edit.setEchoMode(QLineEdit.Password)
+        self.confirm_password_edit.setPlaceholderText(t("confirm_password_placeholder"))
+        password_form.addRow(t("confirm_password"), self.confirm_password_edit)
+
+        btn_set_password = QPushButton(t("set_password_btn"))
+        btn_set_password.setStyleSheet("color: #ff9800; border-color: #ff9800; font-weight: bold;")
+        btn_set_password.clicked.connect(self._on_set_master_password)
+        password_form.addRow(btn_set_password)
+
+        layout.addWidget(password_group)
+
+        # Info
+        info_label = QLabel(t("security_info"))
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #9e9e9e; font-size: 9pt; padding: 8px;")
+        layout.addWidget(info_label)
+
+        layout.addStretch()
+        return tab
+
+    def _on_set_master_password(self):
+        """Set or change the master password."""
+        new_pass = self.new_password_edit.text()
+        confirm = self.confirm_password_edit.text()
+
+        if not new_pass:
+            QMessageBox.warning(self, t("error"), t("password_empty"))
+            return
+
+        if len(new_pass) < 4:
+            QMessageBox.warning(self, t("error"), t("password_empty"))
+            return
+
+        if new_pass != confirm:
+            QMessageBox.warning(self, t("error"), t("password_mismatch"))
+            return
+
+        if self.config.has_master_password and not self.config.is_unlocked:
+            QMessageBox.warning(self, t("error"), t("password_locked_error"))
+            return
+
+        self.config.set_master_password(new_pass)
+        QMessageBox.information(self, "OK", t("password_set_ok"))
+        self.new_password_edit.clear()
+        self.confirm_password_edit.clear()
+
+    # --- Logic ---
+    def _on_transport_type_changed(self, transport_type: str):
+        """Show/hide transport panels based on selected type."""
+        self.file_transport_group.setVisible(transport_type in ("ftp", "sftp", "webdav"))
+        self.email_transport_group.setVisible(transport_type == "email")
+
+    def _browse_path(self):
+        path = QFileDialog.getExistingDirectory(
+            self, t("save_path"), self.path_edit.text()
+        )
+        if path:
+            self.path_edit.setText(path)
+
+    def _detect_save_path(self):
+        """Auto-detect Civ4 BTS save folder by checking common locations."""
+        detected = detect_save_path()
+        if detected:
+            self.path_edit.setText(detected)
+            QMessageBox.information(self, "OK", t("save_path_detected", path=detected))
+        else:
+            QMessageBox.information(self, t("info"), t("save_path_not_detected"))
+
+    def _browse_civ4_path(self):
+        """Legacy stub -- replaced by per-edition browse."""
+        pass
+
+    def _detect_civ4(self):
+        """Legacy stub -- replaced by per-edition detect."""
+        pass
+
+    def _browse_steam_path(self):
+        """Legacy stub -- replaced by per-edition browse."""
+        pass
+
+    def _detect_steam(self):
+        """Legacy stub -- replaced by _detect_steam_into_widget."""
+        pass
+
+    def _on_edition_changed(self, index: int):
+        """Legacy stub -- no longer used (multi-edition UI replaced single dropdown)."""
+        pass
+
+    def _save_settings(self):
+        self.config.player_name = self.player_name_edit.text().strip()
+        self.config.set("player_email", self.player_email_edit.text().strip())
+        self.config.save_path = self.path_edit.text().strip()
+        self.config.set("check_interval_minutes", self.check_interval.value())
+        self.config.set("dark_mode", self.dark_mode_check.isChecked())
+        self.config.set("auto_send", self.auto_send_check.isChecked())
+
+        # Language
+        new_lang = self.language_combo.currentData()
+        self.config.language = new_lang
+        set_language(new_lang)
+
+        # Civ4 installations (multi-edition)
+        installs = {}
+        for edition in ("steam", "gog", "dvd"):
+            w = self._edition_widgets.get(edition, {})
+            installs[edition] = {
+                "enabled": w["enabled"].isChecked() if w.get("enabled") else False,
+                "exe_path": w["exe_edit"].text().strip() if w.get("exe_edit") else "",
+            }
+        self.config.set("civ4_installations", installs)
+        self.config.set("direct_load_global", self.direct_load_global_check.isChecked())
+        self.config.set("preferred_edition", self.preferred_edition_combo.currentData())
+
+        transport_data = {
+            "type": self.transport_type.currentText(),
+            "ignore_ssl_errors": self.ssl_ignore_check.isChecked(),
+            "host": self.transport_host.text().strip(),
+            "port": self.transport_port.value(),
+            "username": self.transport_user.text().strip(),
+            "password": self.transport_pass.text(),
+            "remote_dir": self.transport_dir.text().strip(),
+            "email": {
+                "smtp_host": self.et_smtp_host.text().strip(),
+                "smtp_port": self.et_smtp_port.value(),
+                "smtp_user": self.et_smtp_user.text().strip(),
+                "smtp_password": self.et_smtp_pass.text(),
+                "smtp_use_tls": True,
+                "imap_host": self.et_imap_host.text().strip(),
+                "imap_port": self.et_imap_port.value(),
+                "imap_user": self.et_imap_user.text().strip(),
+                "imap_password": self.et_imap_pass.text(),
+                "imap_use_ssl": True,
+                "mode": self.et_mode.currentText(),
+                "shared_email": self.et_shared_email.text().strip(),
+                "from_address": self.et_from_address.text().strip(),
+            },
+        }
+        self.config.set("transport", transport_data)
+
+        self.config.set("smtp", {
+            "host": self.smtp_host.text().strip(),
+            "port": self.smtp_port.value(),
+            "username": self.smtp_user.text().strip(),
+            "password": self.smtp_pass.text(),
+            "use_tls": True,
+            "from_address": self.smtp_from.text().strip(),
+            "subject_template": self.smtp_subject_template.text().strip(),
+            "body_template": self.smtp_body_template.toPlainText().strip(),
+            "reminder_subject_template": self.smtp_reminder_subject.text().strip(),
+            "reminder_body_template": self.smtp_reminder_body.toPlainText().strip(),
+        })
+
+        # Notification channels + auto-reminder
+        self.config.set("notifications_enabled",
+                        self.notifications_enabled_check.isChecked())
+        self.config.set("notify_via_smtp", self.notify_via_smtp_check.isChecked())
+        self.config.set("notify_via_app", self.notify_via_app_check.isChecked())
+        self.config.set("reminder_auto_enabled", self.reminder_auto_check.isChecked())
+        self.config.set("reminder_auto_days", self.reminder_auto_days.value())
+
+        # Apply theme change immediately to parent window
+        parent = self.parent()
+        if parent and hasattr(parent, 'apply_theme'):
+            parent.apply_theme()
+
+        self.accept()
