@@ -668,6 +668,30 @@
    'C:\\Users\\Mihau\\Downloads\\CIV_PBEM-feature-stats-autolaunch-i18n '
    '(2)\\CIV_PBEM-feature-stats-autolaunch-i18n\\src\\gui\\app_controller.py',
    'PYMODULE'),
+  ('src.gui.dialogs',
+   'C:\\Users\\Mihau\\Downloads\\CIV_PBEM-feature-stats-autolaunch-i18n '
+   '(2)\\CIV_PBEM-feature-stats-autolaunch-i18n\\src\\gui\\dialogs\\__init__.py',
+   'PYMODULE'),
+  ('src.gui.dialogs.edit_game_dialog',
+   'C:\\Users\\Mihau\\Downloads\\CIV_PBEM-feature-stats-autolaunch-i18n '
+   '(2)\\CIV_PBEM-feature-stats-autolaunch-i18n\\src\\gui\\dialogs\\edit_game_dialog.py',
+   'PYMODULE'),
+  ('src.gui.dialogs.game_stats_dialog',
+   'C:\\Users\\Mihau\\Downloads\\CIV_PBEM-feature-stats-autolaunch-i18n '
+   '(2)\\CIV_PBEM-feature-stats-autolaunch-i18n\\src\\gui\\dialogs\\game_stats_dialog.py',
+   'PYMODULE'),
+  ('src.gui.dialogs.game_transport_dialog',
+   'C:\\Users\\Mihau\\Downloads\\CIV_PBEM-feature-stats-autolaunch-i18n '
+   '(2)\\CIV_PBEM-feature-stats-autolaunch-i18n\\src\\gui\\dialogs\\game_transport_dialog.py',
+   'PYMODULE'),
+  ('src.gui.dialogs.new_game_dialog',
+   'C:\\Users\\Mihau\\Downloads\\CIV_PBEM-feature-stats-autolaunch-i18n '
+   '(2)\\CIV_PBEM-feature-stats-autolaunch-i18n\\src\\gui\\dialogs\\new_game_dialog.py',
+   'PYMODULE'),
+  ('src.gui.dialogs.settings_dialog',
+   'C:\\Users\\Mihau\\Downloads\\CIV_PBEM-feature-stats-autolaunch-i18n '
+   '(2)\\CIV_PBEM-feature-stats-autolaunch-i18n\\src\\gui\\dialogs\\settings_dialog.py',
+   'PYMODULE'),
   ('src.gui.file_watcher',
    'C:\\Users\\Mihau\\Downloads\\CIV_PBEM-feature-stats-autolaunch-i18n '
    '(2)\\CIV_PBEM-feature-stats-autolaunch-i18n\\src\\gui\\file_watcher.py',
@@ -675,6 +699,10 @@
   ('src.gui.main_window',
    'C:\\Users\\Mihau\\Downloads\\CIV_PBEM-feature-stats-autolaunch-i18n '
    '(2)\\CIV_PBEM-feature-stats-autolaunch-i18n\\src\\gui\\main_window.py',
+   'PYMODULE'),
+  ('src.gui.styles',
+   'C:\\Users\\Mihau\\Downloads\\CIV_PBEM-feature-stats-autolaunch-i18n '
+   '(2)\\CIV_PBEM-feature-stats-autolaunch-i18n\\src\\gui\\styles.py',
    'PYMODULE'),
   ('src.gui.tray_icon',
    'C:\\Users\\Mihau\\Downloads\\CIV_PBEM-feature-stats-autolaunch-i18n '

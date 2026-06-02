@@ -54,17 +54,22 @@ class AppController(QObject):
             return EmailTransport(
                 smtp_host=smtp_host,
                 smtp_port=ec.get("smtp_port", 587),
+                smtp_security=ec.get("smtp_security", "STARTTLS"),
                 smtp_user=ec.get("smtp_user", ""),
                 smtp_password=ec.get("smtp_password", ""),
-                smtp_use_tls=ec.get("smtp_use_tls", True),
+                incoming_protocol=ec.get("incoming_protocol", "imap"),
                 imap_host=ec.get("imap_host", ""),
                 imap_port=ec.get("imap_port", 993),
+                imap_security=ec.get("imap_security", "SSL"),
                 imap_user=ec.get("imap_user", ""),
                 imap_password=ec.get("imap_password", ""),
-                imap_use_ssl=ec.get("imap_use_ssl", True),
+                pop3_host=ec.get("pop3_host", ""),
+                pop3_port=ec.get("pop3_port", 995),
+                pop3_security=ec.get("pop3_security", "SSL"),
                 mode=ec.get("mode", "shared"),
                 shared_email=ec.get("shared_email", ""),
                 from_address=ec.get("from_address", ""),
+                delete_after_download=ec.get("delete_after_download", False),
             )
 
         host = tc.get("host", "")

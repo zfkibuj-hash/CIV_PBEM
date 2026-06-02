@@ -417,6 +417,71 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Wstaw zmienna",
         "en": "Insert variable",
     },
+    # --- Email autodiscover & presets ---
+    "email_autodiscover": {
+        "pl": "Automatyczne wykrywanie serwera",
+        "en": "Automatic server detection",
+    },
+    "email_autodiscover_btn": {
+        "pl": "Wykryj",
+        "en": "Detect",
+    },
+    "email_autodiscover_invalid": {
+        "pl": "Podaj prawidlowy adres email.",
+        "en": "Enter a valid email address.",
+    },
+    "email_autodiscover_searching": {
+        "pl": "Szukam ustawien serwera...",
+        "en": "Detecting server settings...",
+    },
+    "email_autodiscover_ok": {
+        "pl": "Wykryto ({source}): SMTP={smtp}, IMAP={imap}",
+        "en": "Detected ({source}): SMTP={smtp}, IMAP={imap}",
+    },
+    "email_autodiscover_partial": {
+        "pl": "Czescowo wykryto ({source}). Sprawdz pola recznie.",
+        "en": "Partially detected ({source}). Check fields manually.",
+    },
+    "email_autodiscover_failed": {
+        "pl": "Nie wykryto automatycznie. Wypelnij pola recznie.",
+        "en": "Auto-detection failed. Fill in fields manually.",
+    },
+    "email_preset": {
+        "pl": "Preset dostawcy:",
+        "en": "Provider preset:",
+    },
+    "email_preset_custom": {
+        "pl": "-- wlasny serwer --",
+        "en": "-- custom server --",
+    },
+    "email_app_password_hint": {
+        "pl": "Ten dostawca wymaga hasla aplikacji (App Password), nie zwyklego hasla konta.\nWygeneruj je w ustawieniach bezpieczenstwa swojego konta.",
+        "en": "This provider requires an App Password, not your regular account password.\nGenerate it in your account security settings.",
+    },
+    "email_incoming": {
+        "pl": "Poczta przychodząca (IMAP / POP3)",
+        "en": "Incoming mail (IMAP / POP3)",
+    },
+    "email_protocol": {
+        "pl": "Protokol:",
+        "en": "Protocol:",
+    },
+    "email_imap_recommended": {
+        "pl": "(zalecany)",
+        "en": "(recommended)",
+    },
+    "email_delete_after_download": {
+        "pl": "Usun wiadomosci po pobraniu save'a",
+        "en": "Delete messages after downloading save",
+    },
+    "security_label": {
+        "pl": "Zabezpieczenie",
+        "en": "Security",
+    },
+    "security_none": {
+        "pl": "Brak",
+        "en": "None",
+    },
     # --- Import: replace global settings ---
     "import_replace_settings": {
         "pl": "Zastap globalne ustawienia transportu i powiadomien ustawieniami z tej gry",

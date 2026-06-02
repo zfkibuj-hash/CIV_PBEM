@@ -363,61 +363,182 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(self.file_transport_group)
 
-        # Email transport settings (SMTP + IMAP)
+        # Email transport settings (SMTP + IMAP/POP3)
         self.email_transport_group = QGroupBox(t("email_transport_group"))
-        email_form = QFormLayout(self.email_transport_group)
-        email_form.setSpacing(6)
+        email_layout = QVBoxLayout(self.email_transport_group)
+        email_layout.setSpacing(8)
 
         ec = tc.get("email", {})
+
+        # --- Autodiscover ---
+        autodiscover_group = QGroupBox(t("email_autodiscover"))
+        ad_layout = QHBoxLayout(autodiscover_group)
+        self.et_autodiscover_email = QLineEdit()
+        self.et_autodiscover_email.setPlaceholderText("twoj@email.com")
+        ad_layout.addWidget(self.et_autodiscover_email)
+        btn_autodiscover = QPushButton(t("email_autodiscover_btn"))
+        btn_autodiscover.clicked.connect(self._run_autodiscover)
+        ad_layout.addWidget(btn_autodiscover)
+        email_layout.addWidget(autodiscover_group)
+
+        # Autodiscover status label
+        self.et_autodiscover_status = QLabel("")
+        self.et_autodiscover_status.setStyleSheet("color: #9e9e9e; font-size: 8pt;")
+        self.et_autodiscover_status.setWordWrap(True)
+        email_layout.addWidget(self.et_autodiscover_status)
+
+        # --- Preset selector ---
+        preset_layout = QHBoxLayout()
+        preset_layout.addWidget(QLabel(t("email_preset")))
+        self.et_preset_combo = QComboBox()
+        self.et_preset_combo.addItem(t("email_preset_custom"), "")
+        self.et_preset_combo.addItem("Gmail", "gmail")
+        self.et_preset_combo.addItem("Outlook / Hotmail / Live", "outlook")
+        self.et_preset_combo.addItem("Yahoo Mail", "yahoo")
+        self.et_preset_combo.addItem("iCloud Mail", "icloud")
+        self.et_preset_combo.currentIndexChanged.connect(self._apply_email_preset)
+        preset_layout.addWidget(self.et_preset_combo)
+        preset_layout.addStretch()
+        email_layout.addLayout(preset_layout)
+
+        # App password hint
+        self.et_apppwd_hint = QLabel(t("email_app_password_hint"))
+        self.et_apppwd_hint.setWordWrap(True)
+        self.et_apppwd_hint.setStyleSheet("color: #ff9800; font-size: 8pt;")
+        self.et_apppwd_hint.setVisible(False)
+        email_layout.addWidget(self.et_apppwd_hint)
+
+        # --- Mode & shared mailbox ---
+        mode_form = QFormLayout()
+        mode_form.setSpacing(6)
 
         self.et_mode = QComboBox()
         self.et_mode.addItems(["shared", "individual"])
         self.et_mode.setCurrentText(ec.get("mode", "shared"))
-        email_form.addRow(t("field_mode"), self.et_mode)
+        mode_form.addRow(t("field_mode"), self.et_mode)
 
         self.et_shared_email = QLineEdit(ec.get("shared_email", ""))
-        self.et_shared_email.setPlaceholderText("wspoldzielona skrzynka, np. civ4pbem@...")
-        email_form.addRow(t("field_shared_mailbox"), self.et_shared_email)
+        self.et_shared_email.setPlaceholderText("civ4pbem@example.com")
+        mode_form.addRow(t("field_shared_mailbox"), self.et_shared_email)
+
+        self.et_from_address = QLineEdit(ec.get("from_address", ""))
+        self.et_from_address.setPlaceholderText(t("notification_empty_hint"))
+        mode_form.addRow(t("field_from"), self.et_from_address)
+
+        email_layout.addLayout(mode_form)
+
+        # --- SMTP ---
+        smtp_box = QGroupBox("SMTP")
+        smtp_form = QFormLayout(smtp_box)
+        smtp_form.setSpacing(5)
 
         self.et_smtp_host = QLineEdit(ec.get("smtp_host", ""))
-        self.et_smtp_host.setPlaceholderText("np. smtp.gmail.com")
-        email_form.addRow("SMTP host:", self.et_smtp_host)
+        self.et_smtp_host.setPlaceholderText("smtp.gmail.com")
+        smtp_form.addRow(t("field_host"), self.et_smtp_host)
 
+        smtp_port_sec = QHBoxLayout()
         self.et_smtp_port = QSpinBox()
         self.et_smtp_port.setRange(1, 65535)
         self.et_smtp_port.setValue(ec.get("smtp_port", 587))
-        email_form.addRow("SMTP port:", self.et_smtp_port)
+        smtp_port_sec.addWidget(self.et_smtp_port)
+        self.et_smtp_security = QComboBox()
+        self.et_smtp_security.addItems(["STARTTLS", "SSL", t("security_none")])
+        self.et_smtp_security.setCurrentText(ec.get("smtp_security", "STARTTLS"))
+        smtp_port_sec.addWidget(self.et_smtp_security)
+        smtp_form.addRow(t("field_port") + " / " + t("security_label"), smtp_port_sec)
 
         self.et_smtp_user = QLineEdit(ec.get("smtp_user", ""))
-        email_form.addRow("SMTP login:", self.et_smtp_user)
+        smtp_form.addRow(t("field_login"), self.et_smtp_user)
 
         self.et_smtp_pass = QLineEdit(ec.get("smtp_password", ""))
         self.et_smtp_pass.setEchoMode(QLineEdit.Password)
-        email_form.addRow("SMTP " + t("field_password"), self.et_smtp_pass)
+        smtp_form.addRow(t("field_password"), self.et_smtp_pass)
+
+        email_layout.addWidget(smtp_box)
+
+        # --- Incoming: IMAP or POP3 ---
+        incoming_box = QGroupBox(t("email_incoming"))
+        incoming_layout = QVBoxLayout(incoming_box)
+
+        # Protocol selector
+        proto_layout = QHBoxLayout()
+        proto_layout.addWidget(QLabel(t("email_protocol")))
+        self.et_incoming_proto = QComboBox()
+        self.et_incoming_proto.addItem("IMAP " + t("email_imap_recommended"), "imap")
+        self.et_incoming_proto.addItem("POP3", "pop3")
+        proto = ec.get("incoming_protocol", "imap")
+        self.et_incoming_proto.setCurrentIndex(0 if proto == "imap" else 1)
+        self.et_incoming_proto.currentIndexChanged.connect(self._on_incoming_proto_changed)
+        proto_layout.addWidget(self.et_incoming_proto)
+        proto_layout.addStretch()
+        incoming_layout.addLayout(proto_layout)
+
+        # IMAP fields
+        self.et_imap_widget = QWidget()
+        imap_form = QFormLayout(self.et_imap_widget)
+        imap_form.setSpacing(5)
+        imap_form.setContentsMargins(0, 0, 0, 0)
 
         self.et_imap_host = QLineEdit(ec.get("imap_host", ""))
-        self.et_imap_host.setPlaceholderText("np. imap.gmail.com")
-        email_form.addRow("IMAP host:", self.et_imap_host)
+        self.et_imap_host.setPlaceholderText("imap.gmail.com")
+        imap_form.addRow(t("field_host"), self.et_imap_host)
 
+        imap_port_sec = QHBoxLayout()
         self.et_imap_port = QSpinBox()
         self.et_imap_port.setRange(1, 65535)
         self.et_imap_port.setValue(ec.get("imap_port", 993))
-        email_form.addRow("IMAP port:", self.et_imap_port)
+        imap_port_sec.addWidget(self.et_imap_port)
+        self.et_imap_security = QComboBox()
+        self.et_imap_security.addItems(["SSL", "STARTTLS", t("security_none")])
+        self.et_imap_security.setCurrentText(ec.get("imap_security", "SSL"))
+        imap_port_sec.addWidget(self.et_imap_security)
+        imap_form.addRow(t("field_port") + " / " + t("security_label"), imap_port_sec)
 
         self.et_imap_user = QLineEdit(ec.get("imap_user", ""))
-        email_form.addRow("IMAP login:", self.et_imap_user)
+        imap_form.addRow(t("field_login"), self.et_imap_user)
 
         self.et_imap_pass = QLineEdit(ec.get("imap_password", ""))
         self.et_imap_pass.setEchoMode(QLineEdit.Password)
-        email_form.addRow("IMAP " + t("field_password"), self.et_imap_pass)
+        imap_form.addRow(t("field_password"), self.et_imap_pass)
 
-        self.et_from_address = QLineEdit(ec.get("from_address", ""))
-        self.et_from_address.setPlaceholderText("adres nadawcy (opcjonalnie)")
-        email_form.addRow(t("field_from"), self.et_from_address)
+        incoming_layout.addWidget(self.et_imap_widget)
+
+        # POP3 fields
+        self.et_pop3_widget = QWidget()
+        pop3_form = QFormLayout(self.et_pop3_widget)
+        pop3_form.setSpacing(5)
+        pop3_form.setContentsMargins(0, 0, 0, 0)
+
+        self.et_pop3_host = QLineEdit(ec.get("pop3_host", ""))
+        self.et_pop3_host.setPlaceholderText("pop3.example.com")
+        pop3_form.addRow(t("field_host"), self.et_pop3_host)
+
+        pop3_port_sec = QHBoxLayout()
+        self.et_pop3_port = QSpinBox()
+        self.et_pop3_port.setRange(1, 65535)
+        self.et_pop3_port.setValue(ec.get("pop3_port", 995))
+        pop3_port_sec.addWidget(self.et_pop3_port)
+        self.et_pop3_security = QComboBox()
+        self.et_pop3_security.addItems(["SSL", "STARTTLS", t("security_none")])
+        self.et_pop3_security.setCurrentText(ec.get("pop3_security", "SSL"))
+        pop3_port_sec.addWidget(self.et_pop3_security)
+        pop3_form.addRow(t("field_port") + " / " + t("security_label"), pop3_port_sec)
+
+        incoming_layout.addWidget(self.et_pop3_widget)
+
+        # Delete after download
+        self.et_delete_after_download = QCheckBox(t("email_delete_after_download"))
+        self.et_delete_after_download.setChecked(ec.get("delete_after_download", False))
+        incoming_layout.addWidget(self.et_delete_after_download)
+
+        email_layout.addWidget(incoming_box)
+
+        # Init protocol visibility
+        self._on_incoming_proto_changed(self.et_incoming_proto.currentIndex())
 
         et_warning = QLabel(f"\u26a0 {t('email_warning')}")
         et_warning.setStyleSheet("color: #ff9800; font-size: 9pt;")
-        email_form.addRow(et_warning)
+        email_layout.addWidget(et_warning)
 
         layout.addWidget(self.email_transport_group)
 
@@ -708,6 +829,92 @@ class SettingsDialog(QDialog):
         self.file_transport_group.setVisible(transport_type in ("ftp", "sftp", "webdav"))
         self.email_transport_group.setVisible(transport_type == "email")
 
+    def _on_incoming_proto_changed(self, index: int):
+        """Show IMAP or POP3 fields based on selected protocol."""
+        is_imap = (self.et_incoming_proto.currentData() == "imap")
+        self.et_imap_widget.setVisible(is_imap)
+        self.et_pop3_widget.setVisible(not is_imap)
+
+    def _run_autodiscover(self):
+        """Run autodiscovery for the entered email address."""
+        from src.transport.autodiscover import discover
+        from PyQt5.QtWidgets import QApplication
+        email_addr = self.et_autodiscover_email.text().strip()
+        if not email_addr or "@" not in email_addr:
+            self.et_autodiscover_status.setText(t("email_autodiscover_invalid"))
+            return
+
+        self.et_autodiscover_status.setText(t("email_autodiscover_searching"))
+        QApplication.processEvents()
+
+        result = discover(email_addr)
+        if result and result.is_complete:
+            # Fill SMTP fields
+            self.et_smtp_host.setText(result.smtp.host)
+            self.et_smtp_port.setValue(result.smtp.port)
+            sec_idx = self.et_smtp_security.findText(result.smtp.security)
+            if sec_idx >= 0:
+                self.et_smtp_security.setCurrentIndex(sec_idx)
+
+            # Fill IMAP fields
+            self.et_imap_host.setText(result.imap.host)
+            self.et_imap_port.setValue(result.imap.port)
+            sec_idx = self.et_imap_security.findText(result.imap.security)
+            if sec_idx >= 0:
+                self.et_imap_security.setCurrentIndex(sec_idx)
+
+            # Set IMAP protocol
+            self.et_incoming_proto.setCurrentIndex(0)
+            self._on_incoming_proto_changed(0)
+
+            self.et_autodiscover_status.setText(
+                t("email_autodiscover_ok", source=result.source,
+                  smtp=str(result.smtp), imap=str(result.imap)))
+            self.et_autodiscover_status.setStyleSheet("color: #66bb6a; font-size: 8pt;")
+        elif result:
+            # Partial result
+            if result.smtp:
+                self.et_smtp_host.setText(result.smtp.host)
+                self.et_smtp_port.setValue(result.smtp.port)
+            if result.imap:
+                self.et_imap_host.setText(result.imap.host)
+                self.et_imap_port.setValue(result.imap.port)
+            self.et_autodiscover_status.setText(
+                t("email_autodiscover_partial", source=result.source))
+            self.et_autodiscover_status.setStyleSheet("color: #ff9800; font-size: 8pt;")
+        else:
+            self.et_autodiscover_status.setText(t("email_autodiscover_failed"))
+            self.et_autodiscover_status.setStyleSheet("color: #ef5350; font-size: 8pt;")
+
+    # Preset data: smtp_host, smtp_port, smtp_security, imap_host, imap_port, imap_security
+    _EMAIL_PRESETS = {
+        "gmail": ("smtp.gmail.com", 587, "STARTTLS", "imap.gmail.com", 993, "SSL"),
+        "outlook": ("smtp-mail.outlook.com", 587, "STARTTLS", "imap-mail.outlook.com", 993, "SSL"),
+        "yahoo": ("smtp.mail.yahoo.com", 587, "STARTTLS", "imap.mail.yahoo.com", 993, "SSL"),
+        "icloud": ("smtp.mail.me.com", 587, "STARTTLS", "imap.mail.me.com", 993, "SSL"),
+    }
+    _APP_PASSWORD_PROVIDERS = {"gmail", "yahoo", "icloud"}
+
+    def _apply_email_preset(self, index: int):
+        """Fill SMTP/IMAP fields from selected preset."""
+        key = self.et_preset_combo.currentData()
+        if not key or key not in self._EMAIL_PRESETS:
+            self.et_apppwd_hint.setVisible(False)
+            return
+        sh, sp, ss, ih, ip, is_ = self._EMAIL_PRESETS[key]
+        self.et_smtp_host.setText(sh)
+        self.et_smtp_port.setValue(sp)
+        idx = self.et_smtp_security.findText(ss)
+        if idx >= 0:
+            self.et_smtp_security.setCurrentIndex(idx)
+        self.et_imap_host.setText(ih)
+        self.et_imap_port.setValue(ip)
+        idx = self.et_imap_security.findText(is_)
+        if idx >= 0:
+            self.et_imap_security.setCurrentIndex(idx)
+        # Show app password hint for providers that require it
+        self.et_apppwd_hint.setVisible(key in self._APP_PASSWORD_PROVIDERS)
+
     def _browse_path(self):
         path = QFileDialog.getExistingDirectory(
             self, t("save_path"), self.path_edit.text()
@@ -780,14 +987,19 @@ class SettingsDialog(QDialog):
             "email": {
                 "smtp_host": self.et_smtp_host.text().strip(),
                 "smtp_port": self.et_smtp_port.value(),
+                "smtp_security": self.et_smtp_security.currentText(),
                 "smtp_user": self.et_smtp_user.text().strip(),
                 "smtp_password": self.et_smtp_pass.text(),
-                "smtp_use_tls": True,
+                "incoming_protocol": self.et_incoming_proto.currentData(),
                 "imap_host": self.et_imap_host.text().strip(),
                 "imap_port": self.et_imap_port.value(),
+                "imap_security": self.et_imap_security.currentText(),
                 "imap_user": self.et_imap_user.text().strip(),
                 "imap_password": self.et_imap_pass.text(),
-                "imap_use_ssl": True,
+                "pop3_host": self.et_pop3_host.text().strip(),
+                "pop3_port": self.et_pop3_port.value(),
+                "pop3_security": self.et_pop3_security.currentText(),
+                "delete_after_download": self.et_delete_after_download.isChecked(),
                 "mode": self.et_mode.currentText(),
                 "shared_email": self.et_shared_email.text().strip(),
                 "from_address": self.et_from_address.text().strip(),

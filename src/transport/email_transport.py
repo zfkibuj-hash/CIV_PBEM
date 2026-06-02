@@ -1,22 +1,21 @@
 """
 Email-based transport: sends save files as email attachments (SMTP)
-and retrieves them from a mailbox (IMAP).
+and retrieves them from a mailbox (IMAP or POP3).
 
 Supports two modes:
 - Individual: sends save directly to the next player's email, checks own inbox.
-- Shared mailbox: all players send to / check a shared mailbox (e.g. civ4pbem@...).
-  In shared mode, saves are identified by subject line containing game name and turn info.
+- Shared mailbox: all players send to / check a shared mailbox.
 
-Naming convention for attachments:
-    {game_name}_T{turn_number:04d}_{sender_name}.CivBeyondSwordSave
-
-The sender_name is the player who FINISHED their turn and is uploading.
-This way the recipient knows who sent it, and it's easy to sort chronologically.
+Security options per connection:
+- SSL     : immediate TLS (IMAP4_SSL / SMTP_SSL), typically port 993/465
+- STARTTLS: plain connect then upgrade (IMAP4 + starttls / SMTP + starttls), port 143/587
+- None    : unencrypted (not recommended)
 """
 import email
 import email.header
 import imaplib
 import logging
+import poplib
 import smtplib
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -32,44 +31,63 @@ SAVE_EXTENSION = ".CivBeyondSwordSave"
 
 
 class EmailTransport(BaseTransport):
-    """Transport via Email (SMTP for upload, IMAP for download).
+    """Transport via Email (SMTP for upload, IMAP/POP3 for download).
 
     Modes:
         - "individual": sends save to next player's email directly.
-          Each player checks their own inbox for saves.
-        - "shared": all players send to and check a shared mailbox.
-          Saves are identified by subject: [CIV4PBEM] GameName | filename
+        - "shared": all players use a shared mailbox.
 
-    Config:
-        smtp_host, smtp_port, smtp_user, smtp_password, smtp_use_tls
-        imap_host, imap_port, imap_user, imap_password, imap_use_ssl
-        mode: "individual" or "shared"
-        shared_email: email address of shared mailbox (only for shared mode)
+    Incoming protocol:
+        - "imap": recommended, supports search and selective download
+        - "pop3": fallback, downloads all and filters locally
+
+    Security (per connection):
+        - "SSL"      : immediate TLS (port 993/465)
+        - "STARTTLS" : upgrade after connect (port 143/587)
+        - "None"     : unencrypted
     """
 
     def __init__(self, smtp_host: str, smtp_port: int = 587,
                  smtp_user: str = "", smtp_password: str = "",
+                 smtp_security: str = "STARTTLS",
+                 # Legacy parameter kept for backwards compat
                  smtp_use_tls: bool = True,
                  imap_host: str = "", imap_port: int = 993,
                  imap_user: str = "", imap_password: str = "",
+                 imap_security: str = "SSL",
+                 # Legacy parameter kept for backwards compat
                  imap_use_ssl: bool = True,
+                 incoming_protocol: str = "imap",  # "imap" or "pop3"
+                 pop3_host: str = "", pop3_port: int = 995,
+                 pop3_security: str = "SSL",
                  mode: str = "shared",
                  shared_email: str = "",
-                 from_address: str = ""):
+                 from_address: str = "",
+                 delete_after_download: bool = False):
         self.smtp_host = smtp_host
         self.smtp_port = smtp_port
         self.smtp_user = smtp_user
         self.smtp_password = smtp_password
-        self.smtp_use_tls = smtp_use_tls
+        # Support both new security param and legacy use_tls
+        self.smtp_security = smtp_security if smtp_security != "STARTTLS" else (
+            "STARTTLS" if smtp_use_tls else "None")
+
         self.imap_host = imap_host
         self.imap_port = imap_port
         self.imap_user = imap_user
         self.imap_password = imap_password
-        self.imap_use_ssl = imap_use_ssl
-        self.mode = mode  # "individual" or "shared"
+        self.imap_security = imap_security if imap_security != "SSL" else (
+            "SSL" if imap_use_ssl else "STARTTLS")
+
+        self.incoming_protocol = incoming_protocol.lower()  # "imap" or "pop3"
+        self.pop3_host = pop3_host or imap_host  # fallback to imap host if not set
+        self.pop3_port = pop3_port
+        self.pop3_security = pop3_security
+
+        self.mode = mode
         self.shared_email = shared_email
         self.from_address = from_address or smtp_user
-        self._imap: Optional[imaplib.IMAP4_SSL] = None
+        self.delete_after_download = delete_after_download
         self._connected = False
 
     @property
@@ -77,13 +95,15 @@ class EmailTransport(BaseTransport):
         return self._connected
 
     def connect(self) -> bool:
-        """Test IMAP connection."""
+        """Test incoming + SMTP connection."""
         try:
-            imap = self._get_imap()
-            if imap:
+            if self.incoming_protocol == "pop3":
+                pop3 = self._get_pop3()
+                pop3.quit()
+            else:
+                imap = self._get_imap()
                 imap.logout()
             self._connected = True
-            logger.info(f"Email transport connected (mode={self.mode})")
             return True
         except Exception as e:
             logger.error(f"Email transport connection test failed: {e}")
@@ -91,22 +111,44 @@ class EmailTransport(BaseTransport):
             return False
 
     def disconnect(self):
-        if self._imap:
-            try:
-                self._imap.logout()
-            except Exception:
-                pass
-            self._imap = None
         self._connected = False
 
-    def _get_imap(self) -> imaplib.IMAP4_SSL:
-        """Create and authenticate an IMAP connection."""
-        if self.imap_use_ssl:
+    def _get_smtp(self) -> smtplib.SMTP:
+        """Create authenticated SMTP connection."""
+        sec = self.smtp_security.upper()
+        if sec == "SSL":
+            server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=60)
+        else:
+            server = smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=60)
+            if sec == "STARTTLS":
+                server.starttls()
+        server.login(self.smtp_user, self.smtp_password)
+        return server
+
+    def _get_imap(self) -> imaplib.IMAP4:
+        """Create authenticated IMAP connection."""
+        sec = self.imap_security.upper()
+        if sec == "SSL":
             imap = imaplib.IMAP4_SSL(self.imap_host, self.imap_port)
         else:
             imap = imaplib.IMAP4(self.imap_host, self.imap_port)
+            if sec == "STARTTLS":
+                imap.starttls()
         imap.login(self.imap_user, self.imap_password)
         return imap
+
+    def _get_pop3(self):
+        """Create authenticated POP3 connection."""
+        sec = self.pop3_security.upper()
+        if sec == "SSL":
+            pop3 = poplib.POP3_SSL(self.pop3_host, self.pop3_port)
+        else:
+            pop3 = poplib.POP3(self.pop3_host, self.pop3_port)
+            if sec == "STARTTLS":
+                pop3.stls()
+        pop3.user(self.imap_user or self.smtp_user)
+        pop3.pass_(self.imap_password or self.smtp_password)
+        return pop3
 
     def _make_subject(self, game_name: str, remote_filename: str) -> str:
         """Create a standardized subject line for game save emails."""
@@ -154,20 +196,12 @@ class EmailTransport(BaseTransport):
             )
             msg.attach(MIMEText(body, "plain", "utf-8"))
 
-            # Attach save file
             with open(local_path, "rb") as f:
                 attachment = MIMEApplication(f.read(), Name=remote_filename)
             attachment["Content-Disposition"] = f'attachment; filename="{remote_filename}"'
             msg.attach(attachment)
 
-            # Send via SMTP
-            if self.smtp_use_tls:
-                server = smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=60)
-                server.starttls()
-            else:
-                server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=60)
-
-            server.login(self.smtp_user, self.smtp_password)
+            server = self._get_smtp()
             server.send_message(msg)
             server.quit()
 
@@ -179,22 +213,24 @@ class EmailTransport(BaseTransport):
             return False
 
     def download(self, remote_filename: str, local_path: Path, game_name: str) -> bool:
-        """Download a specific save file from the mailbox (IMAP).
+        """Download a specific save file from the mailbox (IMAP or POP3)."""
+        if self.incoming_protocol == "pop3":
+            return self._download_pop3(remote_filename, local_path, game_name)
+        return self._download_imap(remote_filename, local_path, game_name)
 
-        Searches for an email with matching subject and attachment filename.
-        """
+    def _download_imap(self, remote_filename: str, local_path: Path,
+                       game_name: str) -> bool:
+        """Download via IMAP with optional delete after download."""
         try:
             imap = self._get_imap()
             imap.select("INBOX")
 
-            # Search for emails with our tag in subject
             search_query = f'(SUBJECT "[CIV4PBEM] {game_name}")'
             status, msg_ids = imap.search(None, search_query)
             if status != "OK" or not msg_ids[0]:
                 imap.logout()
                 return False
 
-            # Check messages from newest to oldest
             ids = msg_ids[0].split()
             for msg_id in reversed(ids):
                 status, data = imap.fetch(msg_id, "(RFC822)")
@@ -208,7 +244,6 @@ class EmailTransport(BaseTransport):
                 if parsed_file != remote_filename:
                     continue
 
-                # Found the right email - extract attachment
                 for part in msg.walk():
                     if part.get_content_maintype() == "multipart":
                         continue
@@ -216,19 +251,68 @@ class EmailTransport(BaseTransport):
                     if fname and fname == remote_filename:
                         with open(local_path, "wb") as f:
                             f.write(part.get_payload(decode=True))
+
+                        if self.delete_after_download:
+                            imap.store(msg_id, "+FLAGS", "\\Deleted")
+                            imap.expunge()
+
                         imap.logout()
-                        logger.info(f"Email transport: downloaded {remote_filename}")
+                        logger.info(f"Email/IMAP: downloaded {remote_filename}")
                         self._connected = True
                         return True
 
             imap.logout()
             return False
         except Exception as e:
-            logger.error(f"Email transport download (IMAP) failed: {e}")
+            logger.error(f"Email/IMAP download failed: {e}")
+            return False
+
+    def _download_pop3(self, remote_filename: str, local_path: Path,
+                       game_name: str) -> bool:
+        """Download via POP3 — fetches all messages and filters locally."""
+        try:
+            pop3 = self._get_pop3()
+            num_messages = len(pop3.list()[1])
+
+            for i in range(num_messages, 0, -1):  # newest first
+                lines = pop3.retr(i)[1]
+                raw = b"\r\n".join(lines)
+                msg = email.message_from_bytes(raw)
+                subject = self._decode_header(msg.get("Subject", ""))
+                parsed_game, parsed_file = self._parse_subject(subject)
+
+                if parsed_game != game_name or parsed_file != remote_filename:
+                    continue
+
+                for part in msg.walk():
+                    if part.get_content_maintype() == "multipart":
+                        continue
+                    fname = part.get_filename()
+                    if fname and fname == remote_filename:
+                        with open(local_path, "wb") as f:
+                            f.write(part.get_payload(decode=True))
+
+                        if self.delete_after_download:
+                            pop3.dele(i)
+
+                        pop3.quit()
+                        logger.info(f"Email/POP3: downloaded {remote_filename}")
+                        self._connected = True
+                        return True
+
+            pop3.quit()
+            return False
+        except Exception as e:
+            logger.error(f"Email/POP3 download failed: {e}")
             return False
 
     def list_files(self, game_name: str) -> list[str]:
         """List all save file attachments available for a game in the mailbox."""
+        if self.incoming_protocol == "pop3":
+            return self._list_files_pop3(game_name)
+        return self._list_files_imap(game_name)
+
+    def _list_files_imap(self, game_name: str) -> list[str]:
         try:
             imap = self._get_imap()
             imap.select("INBOX")
@@ -245,11 +329,9 @@ class EmailTransport(BaseTransport):
                 status, data = imap.fetch(msg_id, "(RFC822)")
                 if status != "OK":
                     continue
-
                 msg = email.message_from_bytes(data[0][1])
                 subject = self._decode_header(msg.get("Subject", ""))
                 parsed_game, parsed_file = self._parse_subject(subject)
-
                 if parsed_game == game_name and parsed_file:
                     files.append(parsed_file)
 
@@ -257,7 +339,28 @@ class EmailTransport(BaseTransport):
             self._connected = True
             return files
         except Exception as e:
-            logger.error(f"Email transport list_files (IMAP) failed: {e}")
+            logger.error(f"Email/IMAP list_files failed: {e}")
+            return []
+
+    def _list_files_pop3(self, game_name: str) -> list[str]:
+        try:
+            pop3 = self._get_pop3()
+            num_messages = len(pop3.list()[1])
+            files = []
+            for i in range(1, num_messages + 1):
+                # Fetch only headers to save bandwidth
+                lines = pop3.top(i, 0)[1]
+                raw = b"\r\n".join(lines)
+                msg = email.message_from_bytes(raw)
+                subject = self._decode_header(msg.get("Subject", ""))
+                parsed_game, parsed_file = self._parse_subject(subject)
+                if parsed_game == game_name and parsed_file:
+                    files.append(parsed_file)
+            pop3.quit()
+            self._connected = True
+            return files
+        except Exception as e:
+            logger.error(f"Email/POP3 list_files failed: {e}")
             return []
 
     def file_exists(self, remote_filename: str, game_name: str) -> bool:
