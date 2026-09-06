@@ -144,7 +144,7 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 - **Invite codes** — copy/paste a game join string (Discord/Messenger) instead of sending a `.civ4pbem` file
 - Player nick is required (wizard Skip without a name no longer finishes setup; Settings refuse an empty nick)
 - Duplicate-alias warning when another install already claimed that player slot (`install_id` + `player_claims`)
-- Game-name matching is token-based: `Wojna` no longer matches `Wojna3` or `Wojna_Extra`
+- Game-name matching is token-based: `Rome` no longer matches `Rome2` or `Rome_Extra`
 
 **Notifications and UI**
 - In-app notifications **on** by default; SMTP email **off** by default (you can still enable it)
@@ -160,7 +160,7 @@ FTP remains the production transport (SFTP / WebDAV / Email still available). No
 
 ### v4.4.0
 - Managed saves: monotonic `NNNN_` sequence prefix + existing `T####` round number
-  (`0003_Kuzyny_T0001_from_A_to_B.CivBeyondSwordSave`); legacy names still work
+  (`0003_MyGame_T0001_from_A_to_B.CivBeyondSwordSave`); legacy names still work
 - Newest save chosen by sequence (not string/turn alone) — fewer turn-order glitches
 - Check/download also when the newest remote save is addressed to you (stale local state)
 - Case-insensitive player name matching for turns / save routing
@@ -260,7 +260,7 @@ Aplikacja jest **koordynatorem**, nie klientem gry.
 - **Kody zaproszeń** (Discord/Messenger) obok pliku `.civ4pbem`
 - Badge w zasobniku, gdy ktoś czeka na Twoją turę
 - SMTP wyłączony domyślnie; powiadomienia w aplikacji włączone
-- Naprawione mylenie gier o podobnych nazwach (`Wojna` vs `Wojna3`)
+- Naprawione mylenie gier o podobnych nazwach (`Rome` vs `Rome2`)
 - Ostrzeżenie, gdy ten sam nick jest już zajęty na innym komputerze
 - Zmiana statusu / zwycięzcy wymaga hasła admina
 
