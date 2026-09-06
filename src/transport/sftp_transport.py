@@ -8,7 +8,10 @@ from typing import Optional
 
 import paramiko
 
-from src.transport.base import BaseTransport
+from src.transport.base import (
+    BaseTransport, game_remote_dir, normalize_remote_listing,
+    sanitize_filename, sanitize_game_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +44,8 @@ class SFTPTransport(BaseTransport):
     def connect(self) -> bool:
         try:
             self._ssh = paramiko.SSHClient()
-            self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self._ssh.load_system_host_keys()
+            self._ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
 
             connect_kwargs = {
                 "hostname": self.host,
@@ -58,7 +62,6 @@ class SFTPTransport(BaseTransport):
             self._ssh.connect(**connect_kwargs)
             self._sftp = self._ssh.open_sftp()
 
-            # Ensure remote dir exists
             self._ensure_dir(self.remote_dir)
             logger.info(f"Connected to SFTP {self.host}:{self.port}")
             return True
@@ -82,12 +85,20 @@ class SFTPTransport(BaseTransport):
                 pass
             self._ssh = None
 
+    def _game_dir(self, game_name: str) -> str:
+        return game_remote_dir(self.remote_dir, game_name)
+
+    def _remote_path(self, game_name: str, remote_filename: str) -> str:
+        return f"{self._game_dir(sanitize_game_name(game_name))}/{sanitize_filename(remote_filename)}"
+
     def upload(self, local_path: Path, remote_filename: str, game_name: str) -> bool:
         if not self.is_connected:
             if not self.connect():
                 return False
         try:
-            game_dir = f"{self.remote_dir}/{game_name}"
+            remote_filename = sanitize_filename(remote_filename)
+            game_name = sanitize_game_name(game_name)
+            game_dir = self._game_dir(game_name)
             self._ensure_dir(game_dir)
             remote_path = f"{game_dir}/{remote_filename}"
             self._sftp.put(str(local_path), remote_path)
@@ -97,13 +108,14 @@ class SFTPTransport(BaseTransport):
             logger.error(f"SFTP upload failed: {e}")
             return False
 
-    def download(self, remote_filename: str, local_path: Path, game_name: str) -> bool:
+    def download(self, remote_filename: str, local_path: Path, game_name: str, **kwargs) -> bool:
         if not self.is_connected:
             if not self.connect():
                 return False
         try:
-            game_dir = f"{self.remote_dir}/{game_name}"
-            remote_path = f"{game_dir}/{remote_filename}"
+            remote_filename = sanitize_filename(remote_filename)
+            game_name = sanitize_game_name(game_name)
+            remote_path = self._remote_path(game_name, remote_filename)
             self._sftp.get(remote_path, str(local_path))
             logger.info(f"Downloaded {remote_filename} to {local_path}")
             return True
@@ -116,9 +128,14 @@ class SFTPTransport(BaseTransport):
             if not self.connect():
                 return []
         try:
-            game_dir = f"{self.remote_dir}/{game_name}"
+            game_name = sanitize_game_name(game_name)
+            game_dir = self._game_dir(game_name)
             entries = self._sftp.listdir_attr(game_dir)
-            return [e.filename for e in entries if not stat.S_ISDIR(e.st_mode)]
+            return normalize_remote_listing(
+                [e.filename for e in entries if not stat.S_ISDIR(e.st_mode)]
+            )
+        except FileNotFoundError:
+            return []
         except Exception as e:
             logger.error(f"SFTP list failed: {e}")
             return []
@@ -126,6 +143,21 @@ class SFTPTransport(BaseTransport):
     def file_exists(self, remote_filename: str, game_name: str) -> bool:
         files = self.list_files(game_name)
         return remote_filename in files
+
+    def delete(self, remote_filename: str, game_name: str) -> bool:
+        if not self.is_connected:
+            if not self.connect():
+                return False
+        try:
+            remote_filename = sanitize_filename(remote_filename)
+            game_name = sanitize_game_name(game_name)
+            remote_path = self._remote_path(game_name, remote_filename)
+            self._sftp.remove(remote_path)
+            logger.info("SFTP deleted %s", remote_path)
+            return True
+        except Exception as e:
+            logger.error("SFTP delete failed: %s", e)
+            return False
 
     def _ensure_dir(self, path: str):
         """Create directory on SFTP if it doesn't exist."""

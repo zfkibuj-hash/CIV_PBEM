@@ -1,7 +1,12 @@
 __pycache__/
 *.pyc
 *.pyo
+venv/
+tools/upx/
 dist/
 build/
 *.spec.bak
 .env
+saves/
+.pytest_cache/
+*.CivBeyondSwordSave

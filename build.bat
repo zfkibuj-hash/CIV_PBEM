@@ -1,4 +1,7 @@
 @echo off
+setlocal EnableExtensions
+cd /d "%~dp0"
+
 echo ==========================================
 echo   Civ4 PBEM Manager - Build Script
 echo ==========================================
@@ -20,7 +23,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [1/4] Instalowanie zaleznosci...
+echo [1/5] Instalowanie zaleznosci...
 pip install -r requirements.txt
 if errorlevel 1 (
     echo [BLAD] Nie udalo sie zainstalowac zaleznosci!
@@ -29,28 +32,50 @@ if errorlevel 1 (
 )
 echo.
 
-echo [2/4] Generowanie ikony (jesli brak)...
+echo [2/5] Generowanie ikony (jesli brak)...
 if not exist icon.ico (
     pip install Pillow --quiet
     python generate_icon.py
 )
 echo.
 
-echo [3/4] Sprawdzanie UPX (kompresja)...
-where upx >nul 2>&1
-if errorlevel 1 (
-    echo [INFO] UPX nie znaleziony - budowanie bez kompresji.
-    echo        Dla mniejszego .exe zainstaluj UPX:
-    echo        https://github.com/upx/upx/releases
-    echo        i dodaj do PATH.
-    echo.
-) else (
-    echo [OK] UPX znaleziony - kompresja wlaczona.
-    echo.
-)
+set "UPX_EXE=%~dp0tools\upx\upx.exe"
+set "USE_UPX=0"
 
-echo [4/4] Budowanie .exe...
-pyinstaller build.spec --noconfirm
+echo [3/5] UPX (kompresja exe, ~30%% mniej)...
+if exist "%UPX_EXE%" (
+    set "USE_UPX=1"
+    set "PATH=%~dp0tools\upx;%PATH%"
+    echo [OK] Lokalny UPX: %UPX_EXE%
+    "%UPX_EXE%" --version
+) else (
+    where upx >nul 2>&1
+    if not errorlevel 1 (
+        set "USE_UPX=1"
+        echo [OK] UPX w systemowym PATH:
+        upx --version
+    ) else (
+        echo [INFO] Brak UPX — pobieram do tools\upx\...
+        powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\install_upx.ps1"
+        if exist "%UPX_EXE%" (
+            set "USE_UPX=1"
+            set "PATH=%~dp0tools\upx;%PATH%"
+            echo [OK] UPX zainstalowany lokalnie.
+            "%UPX_EXE%" --version
+        ) else (
+            echo [UWAGA] Nie udalo sie pobrac UPX — budowanie bez kompresji.
+        )
+    )
+)
+echo.
+
+echo [4/5] Budowanie .exe...
+if exist "venv\Scripts\pyinstaller.exe" (
+    set "PYINSTALLER=venv\Scripts\pyinstaller.exe"
+) else (
+    set "PYINSTALLER=pyinstaller"
+)
+"%PYINSTALLER%" build.spec --noconfirm
 if errorlevel 1 (
     echo [BLAD] Budowanie nie powiodlo sie!
     pause
@@ -58,16 +83,17 @@ if errorlevel 1 (
 )
 echo.
 
-:: Show result size
+echo [5/5] Podsumowanie
 echo ==========================================
+python -c "from src.config import APP_VERSION, version_label; print('  Wersja:', APP_VERSION, '(' + version_label() + ')')"
 echo   GOTOWE!
 echo ==========================================
 echo.
 for %%A in (dist\Civ4PBEMManager.exe) do echo   Plik: dist\Civ4PBEMManager.exe (%%~zA bytes)
-echo.
-echo   Wskazowki aby zmniejszyc rozmiar:
-echo   1. Zainstaluj UPX i dodaj do PATH (oszczedza ~30%%)
-echo   2. Uzyj PyQt5-slim: pip install PyQt5==5.15.9 (bez WebEngine)
-echo   3. Wiecej info: README.md
+if "%USE_UPX%"=="1" (
+    echo   Kompresja UPX: wlaczona
+) else (
+    echo   Kompresja UPX: wylaczona
+)
 echo.
 pause

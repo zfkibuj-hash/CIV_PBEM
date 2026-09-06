@@ -3,20 +3,22 @@ SettingsDialog — application settings dialog with tabbed layout.
 """
 import logging
 
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QWidget, QLabel, QLineEdit, QSpinBox, QComboBox,
     QGroupBox, QPushButton, QDialogButtonBox, QTextEdit,
     QCheckBox, QFileDialog, QMessageBox, QFrame,
 )
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from src.config import AppConfig
 from src.i18n import t, set_language
 from src.gui.styles import get_style_for_theme
 from src.launcher import (
     detect_civ4_for_edition, detect_save_path, detect_steam_path,
+    resolve_save_layout,
 )
+from src.gui.dialogs.choose_save_path_dialog import ChooseSavePathDialog
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,7 @@ class SettingsDialog(QDialog):
         self._init_ui()
 
     def _init_ui(self):
-        from PyQt5.QtWidgets import QTabWidget
+        from PySide6.QtWidgets import QTabWidget
         layout = QVBoxLayout(self)
 
         tabs = QTabWidget()
@@ -58,7 +60,7 @@ class SettingsDialog(QDialog):
 
     # --- Tab 1: General ---
     def _create_general_tab(self) -> QWidget:
-        from PyQt5.QtWidgets import QScrollArea
+        from PySide6.QtWidgets import QScrollArea
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -79,16 +81,50 @@ class SettingsDialog(QDialog):
 
         # Save path
         path_group = QGroupBox(t("save_path"))
-        path_layout = QHBoxLayout(path_group)
+        path_box = QVBoxLayout(path_group)
+
+        path_layout = QHBoxLayout()
         self.path_edit = QLineEdit(self.config.save_path)
         path_layout.addWidget(self.path_edit)
-        btn_browse = QPushButton(t("browse"))
+        btn_browse = QPushButton(t("browse_save_folder"))
         btn_browse.clicked.connect(self._browse_path)
         path_layout.addWidget(btn_browse)
         btn_detect_saves = QPushButton(t("detect_civ4"))
         btn_detect_saves.clicked.connect(self._detect_save_path)
         path_layout.addWidget(btn_detect_saves)
+        path_box.addLayout(path_layout)
+
+        self.save_path_hint = QLabel(t("save_path_hint"))
+        self.save_path_hint.setWordWrap(True)
+        self.save_path_hint.setStyleSheet("font-size: 9pt; color: #9e9e9e;")
+        path_box.addWidget(self.save_path_hint)
+
+        self.mirror_saves_check = QCheckBox(t("mirror_saves"))
+        self.mirror_saves_check.setChecked(self.config.get("mirror_saves", True))
+        self.mirror_saves_check.toggled.connect(self._on_mirror_toggled)
+        path_box.addWidget(self.mirror_saves_check)
+
+        self.mirror_hint = QLabel(t("mirror_saves_hint"))
+        self.mirror_hint.setWordWrap(True)
+        self.mirror_hint.setStyleSheet("font-size: 9pt; color: #9e9e9e;")
+        path_box.addWidget(self.mirror_hint)
+
+        civ4_row = QHBoxLayout()
+        self.civ4_path_edit = QLineEdit(self.config.get("civ4_save_path", ""))
+        self.civ4_path_edit.setPlaceholderText(t("civ4_save_path_placeholder"))
+        civ4_row.addWidget(self.civ4_path_edit)
+        self.btn_browse_civ4_saves = QPushButton(t("browse_save_folder"))
+        self.btn_browse_civ4_saves.clicked.connect(self._browse_civ4_save_path)
+        civ4_row.addWidget(self.btn_browse_civ4_saves)
+        self.btn_detect_civ4_saves = QPushButton(t("detect_civ4"))
+        self.btn_detect_civ4_saves.clicked.connect(self._detect_civ4_save_path)
+        civ4_row.addWidget(self.btn_detect_civ4_saves)
+        self.btn_use_civ4_as_primary = QPushButton(t("use_civ4_as_primary"))
+        self.btn_use_civ4_as_primary.clicked.connect(self._use_civ4_as_primary)
+        civ4_row.addWidget(self.btn_use_civ4_as_primary)
+        path_box.addLayout(civ4_row)
         layout.addWidget(path_group)
+        self._on_mirror_toggled(self.mirror_saves_check.isChecked())
 
         # Check interval
         interval_group = QGroupBox(t("check_interval"))
@@ -111,6 +147,14 @@ class SettingsDialog(QDialog):
         self.auto_send_check.setChecked(self.config.get("auto_send", False))
         appearance_form.addRow(self.auto_send_check)
 
+        self.autostart_check = QCheckBox(t("autostart"))
+        self.autostart_check.setChecked(self.config.get("autostart", False))
+        appearance_form.addRow(self.autostart_check)
+        autostart_hint = QLabel(t("autostart_hint"))
+        autostart_hint.setWordWrap(True)
+        autostart_hint.setStyleSheet("font-size: 9pt; color: #9e9e9e;")
+        appearance_form.addRow(autostart_hint)
+
         # Language selector
         self.language_combo = QComboBox()
         self.language_combo.addItem("Polski", "pl")
@@ -119,6 +163,10 @@ class SettingsDialog(QDialog):
         idx = 0 if current_lang == "pl" else 1
         self.language_combo.setCurrentIndex(idx)
         appearance_form.addRow(t("language"), self.language_combo)
+
+        self.btn_setup_wizard = QPushButton(t("wizard_rerun"))
+        self.btn_setup_wizard.clicked.connect(self._rerun_setup_wizard)
+        appearance_form.addRow(self.btn_setup_wizard)
 
         layout.addWidget(appearance_group)
 
@@ -191,6 +239,14 @@ class SettingsDialog(QDialog):
             self.config.get("direct_load_global", False))
         installs_layout.addWidget(self.direct_load_global_check)
 
+        self.auto_launch_check = QCheckBox(t("auto_launch"))
+        self.auto_launch_check.setChecked(self.config.get("auto_launch", False))
+        installs_layout.addWidget(self.auto_launch_check)
+        auto_launch_hint = QLabel(t("auto_launch_hint"))
+        auto_launch_hint.setWordWrap(True)
+        auto_launch_hint.setObjectName("hintLabel")
+        installs_layout.addWidget(auto_launch_hint)
+
         # Preferred edition when multiple enabled
         pref_layout = QHBoxLayout()
         pref_layout.addWidget(QLabel(t("preferred_edition")))
@@ -203,6 +259,10 @@ class SettingsDialog(QDialog):
         pref_idx = self.preferred_edition_combo.findData(pref_val)
         self.preferred_edition_combo.setCurrentIndex(pref_idx if pref_idx >= 0 else 0)
         pref_layout.addWidget(self.preferred_edition_combo)
+        pref_hint = QLabel(t("preferred_edition_hint"))
+        pref_hint.setWordWrap(True)
+        pref_hint.setObjectName("hintLabel")
+        pref_layout.addWidget(pref_hint)
         pref_layout.addStretch()
         installs_layout.addLayout(pref_layout)
 
@@ -299,7 +359,7 @@ class SettingsDialog(QDialog):
 
     # --- Tab 2: Transport ---
     def _create_transport_tab(self) -> QWidget:
-        from PyQt5.QtWidgets import QScrollArea
+        from PySide6.QtWidgets import QScrollArea
 
         # If config is locked, show lock message instead of form
         if not self.config.is_unlocked:
@@ -333,7 +393,7 @@ class SettingsDialog(QDialog):
         type_form.addRow(t("transport_type_label"), self.transport_type)
 
         self.ssl_ignore_check = QCheckBox(t("ssl_ignore"))
-        self.ssl_ignore_check.setChecked(tc.get("ignore_ssl_errors", True))
+        self.ssl_ignore_check.setChecked(tc.get("ignore_ssl_errors", False))
         type_form.addRow(self.ssl_ignore_check)
 
         layout.addWidget(type_group)
@@ -563,7 +623,7 @@ class SettingsDialog(QDialog):
             locked_layout.addStretch()
             return locked_tab
 
-        from PyQt5.QtWidgets import QScrollArea
+        from PySide6.QtWidgets import QScrollArea
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -592,11 +652,11 @@ class SettingsDialog(QDialog):
         channels_layout = QVBoxLayout(channels_group)
 
         self.notify_via_smtp_check = QCheckBox(t("notify_via_smtp"))
-        self.notify_via_smtp_check.setChecked(self.config.get("notify_via_smtp", True))
+        self.notify_via_smtp_check.setChecked(self.config.get("notify_via_smtp", False))
         channels_layout.addWidget(self.notify_via_smtp_check)
 
         self.notify_via_app_check = QCheckBox(t("notify_via_app"))
-        self.notify_via_app_check.setChecked(self.config.get("notify_via_app", False))
+        self.notify_via_app_check.setChecked(self.config.get("notify_via_app", True))
         channels_layout.addWidget(self.notify_via_app_check)
 
         app_hint = QLabel(f"  \u2139 {t('notify_via_app_hint')}")
@@ -606,10 +666,35 @@ class SettingsDialog(QDialog):
 
         notif_layout.addWidget(channels_group)
 
-        # --- SMTP settings (shown when SMTP channel enabled) ---
+        # --- SMTP settings (shown only when SMTP channel enabled) ---
         self.smtp_settings_group = QGroupBox(t("notifications_group"))
-        smtp_form = QFormLayout(self.smtp_settings_group)
+        smtp_layout = QVBoxLayout(self.smtp_settings_group)
+        smtp_layout.setSpacing(8)
+
+        # Source selector: same as transport email OR custom SMTP
+        self.smtp_source_combo = QComboBox()
+        self.smtp_source_combo.addItem(t("notif_smtp_same_as_transport"), "transport")
+        self.smtp_source_combo.addItem(t("notif_smtp_custom"), "custom")
+        # Determine current source: if smtp host is set and differs from transport, it's custom
+        tc = self.config.transport_config
+        ec = tc.get("email", {})
+        current_smtp_host = sc.get("host", "")
+        transport_smtp_host = ec.get("smtp_host", "")
+        is_custom = bool(current_smtp_host and current_smtp_host != transport_smtp_host)
+        self.smtp_source_combo.setCurrentIndex(1 if is_custom else 0)
+        smtp_layout.addWidget(self.smtp_source_combo)
+
+        # Hint for "same as transport" mode
+        self.smtp_same_hint = QLabel(f"  \u2139 {t('notif_smtp_same_hint')}")
+        self.smtp_same_hint.setWordWrap(True)
+        self.smtp_same_hint.setStyleSheet("color: #9e9e9e; font-size: 8pt;")
+        smtp_layout.addWidget(self.smtp_same_hint)
+
+        # Custom SMTP fields (hidden when using transport)
+        self.smtp_custom_widget = QWidget()
+        smtp_form = QFormLayout(self.smtp_custom_widget)
         smtp_form.setSpacing(8)
+        smtp_form.setContentsMargins(0, 8, 0, 0)
 
         self.smtp_host = QLineEdit(sc.get("host", ""))
         self.smtp_host.setPlaceholderText("np. smtp.gmail.com")
@@ -633,12 +718,17 @@ class SettingsDialog(QDialog):
         self.smtp_from.setPlaceholderText(t("notification_empty_hint"))
         smtp_form.addRow(t("field_from"), self.smtp_from)
 
-        info_lbl = QLabel(t("notifications_info"))
-        info_lbl.setWordWrap(True)
-        info_lbl.setStyleSheet("color: #9e9e9e; font-size: 8pt;")
-        smtp_form.addRow(info_lbl)
+        smtp_layout.addWidget(self.smtp_custom_widget)
 
         notif_layout.addWidget(self.smtp_settings_group)
+
+        # Wire source combo -> show/hide custom fields
+        def _toggle_smtp_source(index):
+            is_transport = self.smtp_source_combo.currentData() == "transport"
+            self.smtp_custom_widget.setVisible(not is_transport)
+            self.smtp_same_hint.setVisible(is_transport)
+        self.smtp_source_combo.currentIndexChanged.connect(_toggle_smtp_source)
+        _toggle_smtp_source(self.smtp_source_combo.currentIndex())
 
         # --- Message templates ---
         templates_group = QGroupBox(t("notif_templates_group"))
@@ -734,10 +824,10 @@ class SettingsDialog(QDialog):
         self.notifications_enabled_check.stateChanged.connect(_toggle_notif)
         notif_container.setEnabled(self.notifications_enabled_check.isChecked())
 
-        # Wire SMTP channel -> show/hide SMTP settings
+        # Wire SMTP channel -> show/hide SMTP settings + templates
         def _toggle_smtp(state):
-            self.smtp_settings_group.setEnabled(bool(state))
-            templates_group.setEnabled(bool(state))
+            self.smtp_settings_group.setVisible(bool(state))
+            templates_group.setVisible(bool(state))
         self.notify_via_smtp_check.stateChanged.connect(_toggle_smtp)
         _toggle_smtp(self.notify_via_smtp_check.isChecked())
 
@@ -838,7 +928,7 @@ class SettingsDialog(QDialog):
     def _run_autodiscover(self):
         """Run autodiscovery for the entered email address."""
         from src.transport.autodiscover import discover
-        from PyQt5.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         email_addr = self.et_autodiscover_email.text().strip()
         if not email_addr or "@" not in email_addr:
             self.et_autodiscover_status.setText(t("email_autodiscover_invalid"))
@@ -915,6 +1005,20 @@ class SettingsDialog(QDialog):
         # Show app password hint for providers that require it
         self.et_apppwd_hint.setVisible(key in self._APP_PASSWORD_PROVIDERS)
 
+    def _civ4_exe_paths(self) -> list[str]:
+        paths: list[str] = []
+        for cfg in (self.config.civ4_installations or {}).values():
+            exe = (cfg or {}).get("exe_path") or ""
+            if exe:
+                paths.append(exe)
+        legacy = self.config.get("civ4_path") or ""
+        if legacy:
+            paths.append(legacy)
+        return paths
+
+    def _civ4_exe_paths_for_detection(self) -> list[str]:
+        return self.config.civ4_exe_paths_for_save_detection() or self._civ4_exe_paths()
+
     def _browse_path(self):
         path = QFileDialog.getExistingDirectory(
             self, t("save_path"), self.path_edit.text()
@@ -922,14 +1026,85 @@ class SettingsDialog(QDialog):
         if path:
             self.path_edit.setText(path)
 
+    def _browse_civ4_save_path(self):
+        start = self.civ4_path_edit.text() or self.path_edit.text()
+        path = QFileDialog.getExistingDirectory(
+            self, t("civ4_save_path"), start
+        )
+        if path:
+            self.civ4_path_edit.setText(path)
+
+    def _on_mirror_toggled(self, checked: bool):
+        self.civ4_path_edit.setEnabled(checked)
+        self.btn_browse_civ4_saves.setEnabled(checked)
+        self.btn_detect_civ4_saves.setEnabled(checked)
+        self.btn_use_civ4_as_primary.setEnabled(checked)
+        self.mirror_hint.setEnabled(checked)
+
+    def _use_civ4_as_primary(self):
+        civ4 = self.civ4_path_edit.text().strip()
+        if not civ4:
+            detected = detect_save_path(self._civ4_exe_paths_for_detection())
+            if detected:
+                civ4 = detected
+                self.civ4_path_edit.setText(civ4)
+        if civ4:
+            self.path_edit.setText(civ4)
+
+    def _apply_save_layout(self, path: str) -> str:
+        pbem, mirror = resolve_save_layout(path, create=True)
+        self.path_edit.setText(pbem)
+        if self.mirror_saves_check.isChecked():
+            self.civ4_path_edit.setText(mirror)
+        return pbem
+
     def _detect_save_path(self):
-        """Auto-detect Civ4 BTS save folder by checking common locations."""
-        detected = detect_save_path()
-        if detected:
-            self.path_edit.setText(detected)
-            QMessageBox.information(self, "OK", t("save_path_detected", path=detected))
-        else:
-            QMessageBox.information(self, t("info"), t("save_path_not_detected"))
+        """Read Civ4's own save location; user picks from detected folders."""
+        path = ChooseSavePathDialog.pick(
+            self, self._civ4_exe_paths(), current=self.path_edit.text().strip(),
+        )
+        if path:
+            self._apply_save_layout(path)
+
+    def _detect_civ4_save_path(self):
+        path = ChooseSavePathDialog.pick(
+            self,
+            self._civ4_exe_paths(),
+            current=self.civ4_path_edit.text().strip() or self.path_edit.text().strip(),
+        )
+        if path:
+            self._apply_save_layout(path)
+
+    def _rerun_setup_wizard(self):
+        """Re-open the first-run wizard from Settings."""
+        from src.gui.dialogs.setup_wizard import SetupWizard
+        wizard = SetupWizard(self.config, self)
+        if wizard.exec() == QDialog.Accepted:
+            self.player_name_edit.setText(self.config.player_name)
+            self.player_email_edit.setText(self.config.get("player_email", ""))
+            self.path_edit.setText(self.config.save_path)
+            self.civ4_path_edit.setText(self.config.get("civ4_save_path", ""))
+            self.mirror_saves_check.setChecked(self.config.get("mirror_saves", True))
+            self.direct_load_global_check.setChecked(
+                self.config.get("direct_load_global", False)
+            )
+            self.auto_launch_check.setChecked(self.config.get("auto_launch", False))
+            installs = self.config.civ4_installations
+            for edition in ("steam", "gog", "dvd"):
+                widgets = self._edition_widgets.get(edition, {})
+                cfg = installs.get(edition, {})
+                if widgets.get("enabled"):
+                    widgets["enabled"].setChecked(bool(cfg.get("enabled")))
+                if widgets.get("exe_edit"):
+                    widgets["exe_edit"].setText(cfg.get("exe_path", ""))
+            pref = self.config.preferred_edition
+            idx = self.preferred_edition_combo.findData(pref)
+            if idx >= 0:
+                self.preferred_edition_combo.setCurrentIndex(idx)
+            lang = self.config.language
+            lang_idx = self.language_combo.findData(lang)
+            if lang_idx >= 0:
+                self.language_combo.setCurrentIndex(lang_idx)
 
     def _browse_civ4_path(self):
         """Legacy stub -- replaced by per-edition browse."""
@@ -952,12 +1127,28 @@ class SettingsDialog(QDialog):
         pass
 
     def _save_settings(self):
-        self.config.player_name = self.player_name_edit.text().strip()
+        name = self.player_name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, t("error"), t("wizard_name_required"))
+            return
+        self.config.player_name = name
         self.config.set("player_email", self.player_email_edit.text().strip())
         self.config.save_path = self.path_edit.text().strip()
+        self.config.set("mirror_saves", self.mirror_saves_check.isChecked())
+        self.config.set("civ4_save_path", self.civ4_path_edit.text().strip())
         self.config.set("check_interval_minutes", self.check_interval.value())
         self.config.set("dark_mode", self.dark_mode_check.isChecked())
         self.config.set("auto_send", self.auto_send_check.isChecked())
+
+        from src.autostart import is_autostart_enabled, set_autostart
+        want_autostart = self.autostart_check.isChecked()
+        self.config.set("autostart", want_autostart)
+        if want_autostart != is_autostart_enabled():
+            ok, msg = set_autostart(want_autostart)
+            if not ok:
+                QMessageBox.warning(
+                    self, t("error"), t("autostart_failed", msg=msg),
+                )
 
         # Language
         new_lang = self.language_combo.currentData()
@@ -974,11 +1165,13 @@ class SettingsDialog(QDialog):
             }
         self.config.set("civ4_installations", installs)
         self.config.set("direct_load_global", self.direct_load_global_check.isChecked())
+        self.config.set("auto_launch", self.auto_launch_check.isChecked())
         self.config.set("preferred_edition", self.preferred_edition_combo.currentData())
 
         transport_data = {
             "type": self.transport_type.currentText(),
             "ignore_ssl_errors": self.ssl_ignore_check.isChecked(),
+            "use_tls": False,
             "host": self.transport_host.text().strip(),
             "port": self.transport_port.value(),
             "username": self.transport_user.text().strip(),
@@ -1007,18 +1200,35 @@ class SettingsDialog(QDialog):
         }
         self.config.set("transport", transport_data)
 
-        self.config.set("smtp", {
-            "host": self.smtp_host.text().strip(),
-            "port": self.smtp_port.value(),
-            "username": self.smtp_user.text().strip(),
-            "password": self.smtp_pass.text(),
-            "use_tls": True,
-            "from_address": self.smtp_from.text().strip(),
-            "subject_template": self.smtp_subject_template.text().strip(),
-            "body_template": self.smtp_body_template.toPlainText().strip(),
-            "reminder_subject_template": self.smtp_reminder_subject.text().strip(),
-            "reminder_body_template": self.smtp_reminder_body.toPlainText().strip(),
-        })
+        # SMTP notification config — depends on source selection
+        smtp_source = self.smtp_source_combo.currentData() if hasattr(self, 'smtp_source_combo') else "custom"
+        if smtp_source == "transport":
+            # Clear custom SMTP — controller will fallback to transport email credentials
+            self.config.set("smtp", {
+                "host": "",
+                "port": 587,
+                "username": "",
+                "password": "",
+                "use_tls": True,
+                "from_address": "",
+                "subject_template": self.smtp_subject_template.text().strip(),
+                "body_template": self.smtp_body_template.toPlainText().strip(),
+                "reminder_subject_template": self.smtp_reminder_subject.text().strip(),
+                "reminder_body_template": self.smtp_reminder_body.toPlainText().strip(),
+            })
+        else:
+            self.config.set("smtp", {
+                "host": self.smtp_host.text().strip(),
+                "port": self.smtp_port.value(),
+                "username": self.smtp_user.text().strip(),
+                "password": self.smtp_pass.text(),
+                "use_tls": True,
+                "from_address": self.smtp_from.text().strip(),
+                "subject_template": self.smtp_subject_template.text().strip(),
+                "body_template": self.smtp_body_template.toPlainText().strip(),
+                "reminder_subject_template": self.smtp_reminder_subject.text().strip(),
+                "reminder_body_template": self.smtp_reminder_body.toPlainText().strip(),
+            })
 
         # Notification channels + auto-reminder
         self.config.set("notifications_enabled",
@@ -1027,6 +1237,17 @@ class SettingsDialog(QDialog):
         self.config.set("notify_via_app", self.notify_via_app_check.isChecked())
         self.config.set("reminder_auto_enabled", self.reminder_auto_check.isChecked())
         self.config.set("reminder_auto_days", self.reminder_auto_days.value())
+
+        if self.mirror_saves_check.isChecked():
+            from src.launcher import copy_missing_pbem_saves
+            from src.saves import iter_save_dirs
+            primary = self.config.save_path
+            for dest in iter_save_dirs(
+                primary,
+                self.config.get("civ4_save_path", ""),
+                True,
+            ):
+                copy_missing_pbem_saves(primary, str(dest))
 
         # Apply theme change immediately to parent window
         parent = self.parent()

@@ -11,7 +11,10 @@ import urllib.request
 import urllib.error
 import base64
 
-from src.transport.base import BaseTransport
+from src.transport.base import (
+    BaseTransport, game_remote_dir, normalize_remote_listing,
+    sanitize_filename, sanitize_game_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +24,7 @@ class WebDAVTransport(BaseTransport):
 
     def __init__(self, host: str, port: int = 5006, username: str = "",
                  password: str = "", remote_dir: str = "/civ4pbem",
-                 use_https: bool = True, ignore_ssl: bool = True):
+                 use_https: bool = True, ignore_ssl: bool = False):
         self.host = host
         self.port = port
         self.username = username
@@ -29,7 +32,6 @@ class WebDAVTransport(BaseTransport):
         self.remote_dir = remote_dir
         self.use_https = use_https
         self._connected = False
-        # SSL context for self-signed certs
         import ssl
         if ignore_ssl:
             self._ssl_ctx = ssl.create_default_context()
@@ -82,9 +84,8 @@ class WebDAVTransport(BaseTransport):
                 urllib.request.urlopen(req, timeout=30, context=self._ssl_ctx)
             except urllib.error.HTTPError as e:
                 if e.code == 404:
-                    # Try to create the directory
                     self._ensure_dir(self.remote_dir)
-                elif e.code == 207:  # Multi-Status is success for PROPFIND
+                elif e.code == 207:
                     pass
                 else:
                     raise
@@ -100,12 +101,17 @@ class WebDAVTransport(BaseTransport):
     def disconnect(self):
         self._connected = False
 
+    def _game_dir(self, game_name: str) -> str:
+        return game_remote_dir(self.remote_dir, game_name)
+
     def upload(self, local_path: Path, remote_filename: str, game_name: str) -> bool:
         if not self._connected:
             if not self.connect():
                 return False
         try:
-            game_dir = f"{self.remote_dir}/{game_name}"
+            remote_filename = sanitize_filename(remote_filename)
+            game_name = sanitize_game_name(game_name)
+            game_dir = self._game_dir(game_name)
             self._ensure_dir(game_dir)
             remote_path = f"{game_dir}/{remote_filename}"
 
@@ -123,12 +129,14 @@ class WebDAVTransport(BaseTransport):
             logger.error(f"WebDAV upload failed: {e}")
             return False
 
-    def download(self, remote_filename: str, local_path: Path, game_name: str) -> bool:
+    def download(self, remote_filename: str, local_path: Path, game_name: str, **kwargs) -> bool:
         if not self._connected:
             if not self.connect():
                 return False
         try:
-            remote_path = f"{self.remote_dir}/{game_name}/{remote_filename}"
+            remote_filename = sanitize_filename(remote_filename)
+            game_name = sanitize_game_name(game_name)
+            remote_path = f"{self._game_dir(game_name)}/{remote_filename}"
             result = self._request("GET", remote_path)
             if result is None:
                 return False
@@ -147,7 +155,9 @@ class WebDAVTransport(BaseTransport):
             if not self.connect():
                 return []
         try:
-            path = f"{self.remote_dir}/{game_name}/"
+            game_name = sanitize_game_name(game_name)
+            game_dir = self._game_dir(game_name)
+            path = f"{game_dir}/"
             url = f"{self.base_url}{path}"
             req = urllib.request.Request(url, method="PROPFIND")
             req.add_header("Authorization", self._auth_header())
@@ -159,10 +169,11 @@ class WebDAVTransport(BaseTransport):
             except urllib.error.HTTPError as e:
                 if e.code == 207:
                     body = e.read()
+                elif e.code == 404:
+                    return []
                 else:
                     return []
 
-            # Parse WebDAV XML response
             root = ElementTree.fromstring(body)
             ns = {"d": "DAV:"}
             files = []
@@ -172,7 +183,7 @@ class WebDAVTransport(BaseTransport):
                     filename = href.text.rstrip("/").split("/")[-1]
                     if filename and filename != game_name:
                         files.append(filename)
-            return files
+            return normalize_remote_listing(files)
         except Exception as e:
             logger.error(f"WebDAV list failed: {e}")
             return []
@@ -180,6 +191,29 @@ class WebDAVTransport(BaseTransport):
     def file_exists(self, remote_filename: str, game_name: str) -> bool:
         files = self.list_files(game_name)
         return remote_filename in files
+
+    def delete(self, remote_filename: str, game_name: str) -> bool:
+        if not self._connected:
+            if not self.connect():
+                return False
+        try:
+            remote_filename = sanitize_filename(remote_filename)
+            game_name = sanitize_game_name(game_name)
+            remote_path = f"{self._game_dir(game_name)}/{remote_filename}"
+            url = f"{self.base_url}{remote_path}"
+            req = urllib.request.Request(url, method="DELETE")
+            req.add_header("Authorization", self._auth_header())
+            urllib.request.urlopen(req, timeout=30, context=self._ssl_ctx)
+            logger.info("WebDAV deleted %s", remote_path)
+            return True
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return False
+            logger.error("WebDAV delete failed: HTTP %s", e.code)
+            return False
+        except Exception as e:
+            logger.error("WebDAV delete failed: %s", e)
+            return False
 
     def _ensure_dir(self, path: str):
         """Create directory via MKCOL."""
@@ -193,6 +227,6 @@ class WebDAVTransport(BaseTransport):
                 req.add_header("Authorization", self._auth_header())
                 urllib.request.urlopen(req, timeout=15, context=self._ssl_ctx)
             except urllib.error.HTTPError:
-                pass  # Already exists or other error
+                pass
             except Exception:
                 pass

@@ -1,12 +1,12 @@
 """
 GameStatsDialog — dialog showing comprehensive game statistics.
 """
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLabel,
     QGroupBox, QDialogButtonBox,
     QTableWidget, QTableWidgetItem, QHeaderView,
 )
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from src.config import AppConfig
 from src.models.game import Game

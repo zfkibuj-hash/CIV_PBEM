@@ -1,13 +1,13 @@
 """
 GameTransportDialog — per-game transport configuration dialog.
 """
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QSpinBox, QComboBox, QGroupBox,
     QPushButton, QDialogButtonBox, QMessageBox, QCheckBox,
     QScrollArea, QFrame, QApplication,
 )
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from src.config import AppConfig
 from src.models.game import Game
@@ -63,7 +63,7 @@ class GameTransportDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
 
-        from PyQt5.QtWidgets import QWidget
+        from PySide6.QtWidgets import QWidget
         content = QWidget()
         form_layout = QVBoxLayout(content)
 
@@ -79,8 +79,13 @@ class GameTransportDialog(QDialog):
         type_form.addRow(t("transport_type_label"), self.transport_type)
 
         self.ssl_ignore_check = QCheckBox(t("ssl_ignore"))
-        self.ssl_ignore_check.setChecked(tc.get("ignore_ssl_errors", True))
+        self.ssl_ignore_check.setChecked(tc.get("ignore_ssl_errors", False))
         type_form.addRow(self.ssl_ignore_check)
+
+        self.ftp_tls_check = QCheckBox(t("ftp_use_tls"))
+        self.ftp_tls_check.setChecked(bool(tc.get("use_tls", False)))
+        self.ftp_tls_check.setToolTip(t("ftp_use_tls_hint"))
+        type_form.addRow(self.ftp_tls_check)
         form_layout.addWidget(type_group)
 
         # File-based (FTP/SFTP/WebDAV)
@@ -187,6 +192,7 @@ class GameTransportDialog(QDialog):
     def _on_type_changed(self, transport_type: str):
         self.file_group.setVisible(transport_type in ("ftp", "sftp", "webdav"))
         self.email_group.setVisible(transport_type == "email")
+        self.ftp_tls_check.setVisible(transport_type == "ftp")
 
     def _copy_from_defaults(self):
         """Copy transport config from global defaults."""
@@ -206,7 +212,8 @@ class GameTransportDialog(QDialog):
     def _apply_config(self, tc: dict):
         """Apply a transport config dict to the form fields."""
         self.transport_type.setCurrentText(tc.get("type", "ftp"))
-        self.ssl_ignore_check.setChecked(tc.get("ignore_ssl_errors", True))
+        self.ssl_ignore_check.setChecked(tc.get("ignore_ssl_errors", False))
+        self.ftp_tls_check.setChecked(bool(tc.get("use_tls", False)))
         self.t_host.setText(tc.get("host", ""))
         self.t_port.setValue(tc.get("port", 21))
         self.t_user.setText(tc.get("username", ""))
@@ -231,6 +238,7 @@ class GameTransportDialog(QDialog):
         return {
             "type": self.transport_type.currentText(),
             "ignore_ssl_errors": self.ssl_ignore_check.isChecked(),
+            "use_tls": self.ftp_tls_check.isChecked(),
             "host": self.t_host.text().strip(),
             "port": self.t_port.value(),
             "username": self.t_user.text().strip(),

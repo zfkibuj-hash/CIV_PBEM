@@ -1,4 +1,4 @@
-# Civ4 PBEM Manager v4.0
+# Civ4 PBEM Manager v5.0
 
 <p align="center">
   <img src="icon_preview.png" alt="Civ4 PBEM Manager" width="512"/>
@@ -42,9 +42,12 @@ It was built entirely by AI (Claude / Kiro) as pure vibecoding for fun. The huma
 - **Reminder system**: nudge the current player manually or automatically after X days
 - **In-app notifications**: flag files on the transport server — works without any email setup
 - **Encrypted config**: master password protects your server credentials on disk (AES-256)
-- **Export/Import**: share a `.civ4pbem` file with other players — they import it and are ready to go
+- **Export/Import**: share a `.civ4pbem` file **or an invite code** (paste on Discord) — they import it and are ready to go
+- **Player roster**: mark players defeated or resigned; the turn queue skips them
+- **Winner**: auto-declared when one active player remains, or set in Edit Game
 - **Polish / English UI**: runtime language switching, no restart needed
 - **Dark / Light theme**: because some of us play at night
+- **Tray badge**: persistent reminder when someone is waiting on your turn
 
 ---
 
@@ -74,8 +77,8 @@ Just download `Civ4PBEMManager.exe` and run it.
 3. Configure your Civ4 installation (Steam / GOG / DVD)
 4. **+ New Game** → add players in turn order → select game speed
 5. **Game transport...** → configure your shared server
-6. **Export** the `.civ4pbem` file → send it to other players
-7. Other players **Import** → pick their identity → done
+6. **Export** the `.civ4pbem` file, or **Copy invite code** → send it to other players
+7. Other players **Import** / **Paste invite code** → pick their identity → done
 
 After setup: play your turn in Civ4 → watchdog detects the save → uploads → notifies next player → they download and play.
 
@@ -99,7 +102,7 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 ### Requirements
 
 - Python 3.10+
-- PyQt5 >= 5.15
+- PySide6 >= 6.5
 - paramiko >= 3.0
 - watchdog >= 3.0
 - cryptography >= 41.0
@@ -112,18 +115,76 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 | Feature | Details |
 |---|---|
 | Transport | FTP, SFTP, WebDAV, Email (per-game) |
-| Notifications | SMTP email + in-app flag files |
+| Notifications | In-app flag files (default) + optional SMTP |
 | Launcher | Steam / GOG / DVD, direct save load |
 | Languages | Polish, English (runtime switch) |
 | Security | AES-256 encrypted credentials |
 | History | Full turn log, revert to any turn |
+| Roster | Active / defeated / resigned; winner |
+| Join | `.civ4pbem` file or invite code |
 | Statistics | Per-player times, averages |
 | Calendar | In-game year display |
-| Reminders | Manual + auto after X days |
+| Reminders | Manual + auto after X days; tray badge |
 
 ---
 
 ## Changelog
+
+### v5.0.0
+
+**Roster, winner, and safer identity**
+- Player status: **active / defeated / resigned** — the turn queue skips inactive players
+- **Winner**: auto-declared when exactly one active player remains; can also be set in Edit Game
+- Finished games show a gold banner and hide Play Now
+- Roster changes (defeated / resigned / revived / won) notify other players via in-app flags (and SMTP if you enabled it)
+- Changing status or winner requires the **admin password**
+- Defeated/resigned status is kept when pulling `{game}.config` / `state.json` from the server (it used to be dropped)
+
+**Join and identity**
+- **Invite codes** — copy/paste a game join string (Discord/Messenger) instead of sending a `.civ4pbem` file
+- Player nick is required (wizard Skip without a name no longer finishes setup; Settings refuse an empty nick)
+- Duplicate-alias warning when another install already claimed that player slot (`install_id` + `player_claims`)
+- Game-name matching is token-based: `Wojna` no longer matches `Wojna3` or `Wojna_Extra`
+
+**Notifications and UI**
+- In-app notifications **on** by default; SMTP email **off** by default (you can still enable it)
+- Persistent **tray badge** when it is your turn
+- UI on **PySide6** (was PyQt5)
+
+**Fixes**
+- Background Check/upload workers no longer get garbage-collected (silent hangs / “Check stuck”)
+- Empty player name never counts as “your turn”
+- Native Civ4 save scan uses the same game-name token rules as managed saves
+
+FTP remains the production transport (SFTP / WebDAV / Email still available). No extra cloud or P2P service is required.
+
+### v4.4.0
+- Managed saves: monotonic `NNNN_` sequence prefix + existing `T####` round number
+  (`0003_Kuzyny_T0001_from_A_to_B.CivBeyondSwordSave`); legacy names still work
+- Newest save chosen by sequence (not string/turn alone) — fewer turn-order glitches
+- Check/download also when the newest remote save is addressed to you (stale local state)
+- Case-insensitive player name matching for turns / save routing
+- Revert rewinds save_seq (back to #17 → next upload is #18) and keeps that save on the server
+- Check status bar phases (connecting / searching / downloading / summary)
+- Fix: seq-prefixed local saves found for launch; already-local not treated as new download
+- Fix: no UI reload mid-check; generation-safe Check unlock
+
+### v4.3.0
+- Per-game FTP/SFTP/WebDAV folders; email subjects include game name
+- Delete all remote game files; revert cleans newer saves/flags on server
+- One-click Play now (download + launch); optional auto-launch after check
+- Upload validation (from/to / Civ4 `_to_Leader`); Civ4 leader field in edit game
+- Launch uses newest local save (managed or native Civ4 name)
+- Player-order chips with current highlight, wait time, overdue tint, brief pulse
+- Removed misleading save-folder mismatch warning
+- Unit tests for turn/save parsing and upload validation
+
+### v4.2.0
+- PBEM health check: status strip, tray alerts, plain-language diagnostics
+- OS autostart at login (starts minimized to tray)
+- Save folder picker: detected folders, "Use this", optional save count check
+- Setup wizard: Civ4 auto-detect, preferred edition, /fxsload, import/new game/settings shortcuts
+- Save naming `from_X_to_Y`, remote save delete, state sync and OneDrive save detection
 
 ### v4.1.0
 - Email autodiscovery: detects server settings from email address (Mozilla autoconfig, Microsoft Autodiscover, DNS SRV, TCP probing)
@@ -188,8 +249,20 @@ Aplikacja jest **koordynatorem**, nie klientem gry.
 1. Uruchom → Ustawienia → podaj nick, email, folder save'ów
 2. Ustawienia → Ogólne → skonfiguruj wersję Civ4 (Steam/GOG/DVD)
 3. Nowa gra → dodaj graczy → wybierz prędkość → skonfiguruj transport
-4. Eksportuj `.civ4pbem` i wyślij innym graczom
+4. Eksportuj `.civ4pbem` **albo skopiuj kod zaproszenia** i wyślij innym graczom
 5. Graj turę → watchdog automatycznie wyśle save i powiadomi następnego gracza
+
+### Co nowego w v5.0
+
+- Status gracza: **aktywny / pokonany / zrezygnował** — kolejka tur ich pomija
+- **Zwycięzca**: automatycznie, gdy zostaje jeden aktywny gracz (albo ręcznie w Edytuj grę)
+- Powiadomienia o zmianie składu (pokonany / rezygnacja / powrót / wygrana) przez aplikację
+- **Kody zaproszeń** (Discord/Messenger) obok pliku `.civ4pbem`
+- Badge w zasobniku, gdy ktoś czeka na Twoją turę
+- SMTP wyłączony domyślnie; powiadomienia w aplikacji włączone
+- Naprawione mylenie gier o podobnych nazwach (`Wojna` vs `Wojna3`)
+- Ostrzeżenie, gdy ten sam nick jest już zajęty na innym komputerze
+- Zmiana statusu / zwycięzcy wymaga hasła admina
 
 Pełna instrukcja: **[MANUAL.md](MANUAL.md)**
 

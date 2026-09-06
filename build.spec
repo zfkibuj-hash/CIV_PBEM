@@ -14,35 +14,51 @@ block_cipher = None
 
 # Modules we don't use - excluding them saves 10-20MB
 EXCLUDES = [
-    'PyQt5.QtWebEngine',
-    'PyQt5.QtWebEngineCore',
-    'PyQt5.QtWebEngineWidgets',
-    'PyQt5.QtMultimedia',
-    'PyQt5.QtMultimediaWidgets',
-    'PyQt5.QtNetwork',
-    'PyQt5.QtBluetooth',
-    'PyQt5.QtDesigner',
-    'PyQt5.QtHelp',
-    'PyQt5.QtLocation',
-    'PyQt5.QtNfc',
-    'PyQt5.QtOpenGL',
-    'PyQt5.QtPositioning',
-    'PyQt5.QtPrintSupport',
-    'PyQt5.QtQml',
-    'PyQt5.QtQuick',
-    'PyQt5.QtQuickWidgets',
-    'PyQt5.QtRemoteObjects',
-    'PyQt5.QtSensors',
-    'PyQt5.QtSerialPort',
-    'PyQt5.QtSql',
-    'PyQt5.QtSvg',
-    'PyQt5.QtTest',
-    'PyQt5.QtTextToSpeech',
-    'PyQt5.QtWebChannel',
-    'PyQt5.QtWebSockets',
-    'PyQt5.QtXml',
-    'PyQt5.QtXmlPatterns',
-    'PyQt5.QtDBus',
+    'PySide6.QtWebEngine',
+    'PySide6.QtWebEngineCore',
+    'PySide6.QtWebEngineWidgets',
+    'PySide6.QtMultimedia',
+    'PySide6.QtMultimediaWidgets',
+    'PySide6.QtNetwork',
+    'PySide6.QtBluetooth',
+    'PySide6.QtDesigner',
+    'PySide6.QtHelp',
+    'PySide6.QtLocation',
+    'PySide6.QtNfc',
+    'PySide6.QtOpenGL',
+    'PySide6.QtPositioning',
+    'PySide6.QtPrintSupport',
+    'PySide6.QtQml',
+    'PySide6.QtQuick',
+    'PySide6.QtQuickWidgets',
+    'PySide6.QtRemoteObjects',
+    'PySide6.QtSensors',
+    'PySide6.QtSerialPort',
+    'PySide6.QtSql',
+    'PySide6.QtSvg',
+    'PySide6.QtTest',
+    'PySide6.QtTextToSpeech',
+    'PySide6.QtWebChannel',
+    'PySide6.QtWebSockets',
+    'PySide6.QtXml',
+    'PySide6.QtDBus',
+    'PySide6.Qt3DCore',
+    'PySide6.Qt3DRender',
+    'PySide6.Qt3DInput',
+    'PySide6.QtDataVisualization',
+    'PySide6.QtCharts',
+    'PySide6.QtPdf',
+    'PySide6.QtPdfWidgets',
+    'PySide6.QtShaderTools',
+    'PySide6.QtVirtualKeyboard',
+    'PySide6.QtSpatialAudio',
+    'PySide6.QtScxml',
+    'PySide6.QtStateMachine',
+    'PySide6.QtHttpServer',
+    'PySide6.QtNetworkAuth',
+    # chardet (pulled by email parsing but huge)
+    'chardet',
+    'charset_normalizer',
     # Unused stdlib modules
     'tkinter',
     'unittest',
@@ -65,10 +81,10 @@ a = Analysis(
     datas=[('icon.ico', '.')],
     hiddenimports=[
         'paramiko',
-        'PyQt5',
-        'PyQt5.QtWidgets',
-        'PyQt5.QtCore',
-        'PyQt5.QtGui',
+        'PySide6',
+        'PySide6.QtWidgets',
+        'PySide6.QtCore',
+        'PySide6.QtGui',
     ],
     hookspath=[],
     hooksconfig={},
@@ -80,23 +96,45 @@ a = Analysis(
     noarchive=False,
 )
 
-# Remove unnecessary Qt plugins that add to size
+# Remove unnecessary Qt plugins and DLLs that add to size
 import os
 plugins_to_keep = {'platforms', 'styles', 'imageformats'}
 a.binaries = [
     b for b in a.binaries
     if not (
         'QtWebEngine' in b[0] or
-        'Qt5WebEngine' in b[0] or
-        'Qt5Multimedia' in b[0] or
-        'Qt5Quick' in b[0] or
-        'Qt5Qml' in b[0] or
-        'Qt5Svg' in b[0] or
-        'Qt5Network' in b[0] or
+        'Qt6WebEngine' in b[0] or
+        'Qt6Multimedia' in b[0] or
+        'Qt6Quick' in b[0] or
+        'Qt6Qml' in b[0] or
+        'Qt6Svg' in b[0] or
+        'Qt6Network' in b[0] or
+        'Qt6Pdf' in b[0] or
+        'Qt6OpenGL' in b[0] or
+        'Qt6QmlModels' in b[0] or
+        'Qt6VirtualKeyboard' in b[0] or
+        'Qt6Positioning' in b[0] or
+        'Qt6ShaderTools' in b[0] or
         'opengl32sw' in b[0] or
         'd3dcompiler' in b[0] or
         'libGLESv2' in b[0] or
-        'libEGL' in b[0]
+        'libEGL' in b[0] or
+        'QtQuick' in b[0] or
+        'QtQml' in b[0] or
+        'QtOpenGL' in b[0] or
+        'QtPdf' in b[0] or
+        'QtNetwork' in b[0] or
+        'QtSvg' in b[0]
+    )
+]
+
+# Also strip from datas
+a.datas = [
+    d for d in a.datas
+    if not (
+        'translations' in d[0].lower() or
+        'QtWebEngine' in d[0] or
+        'qml' in d[0].lower()
     )
 ]
 

@@ -20,7 +20,17 @@ from src.crypto import encrypt_data, decrypt_data, hash_password_check
 logger = logging.getLogger(__name__)
 
 APP_NAME = "Civ4PBEMManager"
-APP_VERSION = "4.1.0"
+APP_VERSION = "5.0.0"
+
+
+def version_label() -> str:
+    """UI label from APP_VERSION, e.g. v4.4.1 (patch shown when non-zero)."""
+    parts = APP_VERSION.split(".")
+    if len(parts) >= 3 and parts[2] not in ("0", "00"):
+        return f"v{parts[0]}.{parts[1]}.{parts[2]}"
+    if len(parts) >= 2:
+        return f"v{parts[0]}.{parts[1]}"
+    return f"v{APP_VERSION}"
 
 DEFAULT_SAVE_PATH = str(
     Path.home() / "Documents" / "My Games" / "Beyond the Sword" / "Saves" / "pbem"
@@ -38,13 +48,24 @@ PUBLIC_KEYS = {
     # Multi-edition config
     "civ4_installations", "preferred_edition",
     # Global direct load (one checkbox for all editions)
-    "direct_load_global",
+    "direct_load_global", "auto_launch",
     # Notifications master switch + channels
     "notifications_enabled", "notify_via_smtp", "notify_via_app",
     # Auto-reminder
     "reminder_auto_enabled", "reminder_auto_days",
     # Export: suppress password prompt
     "export_skip_password_prompt",
+    # First-run wizard completed
+    "setup_complete",
+    # Dual-write: program folder + folder Civ4 Load Game actually opens
+    "mirror_saves", "civ4_save_path",
+    "save_path_mismatch_dismissed",
+    # Launch with Windows / OS login
+    "autostart",
+    # Stable per-install id (duplicate-alias claims on shared FTP)
+    "install_id",
+    # Last shown in-app notify flag timestamp per game
+    "seen_notify",
 }
 
 # Keys that are encrypted (sensitive — contain credentials)
@@ -147,6 +168,7 @@ class AppConfig:
             self._unlocked = True
             self._has_encrypted = False
             self.save()
+        self._ensure_install_id()
 
     def unlock(self, password: str) -> bool:
         """Unlock config with master password — decrypts private data.
@@ -224,16 +246,45 @@ class AppConfig:
             "preferred_edition": "",
             # Global direct load: try /fxsload= for all editions
             "direct_load_global": False,
+            "auto_launch": False,
             # Notification channels
             "notifications_enabled": True,
-            "notify_via_smtp": True,   # send email via SMTP
-            "notify_via_app": False,   # upload .flag file to transport server
+            "notify_via_smtp": False,  # send email via SMTP (off by default)
+            "notify_via_app": True,    # upload .flag file to transport server (default)
             # Auto-reminder: send email to current player after X days of inactivity
             "reminder_auto_enabled": False,
             "reminder_auto_days": 2,
             # Export: if True, skip "set password?" prompt before exporting .civ4pbem
             "export_skip_password_prompt": False,
+            "setup_complete": False,
+            "mirror_saves": True,
+            "civ4_save_path": "",
+            "save_path_mismatch_dismissed": "",
+            "install_id": "",
+            "seen_notify": {},
         }
+
+    def _ensure_install_id(self):
+        """Give this copy of the app a stable id (used for alias claims)."""
+        if (self._public.get("install_id") or "").strip():
+            return
+        import uuid
+        self._public["install_id"] = str(uuid.uuid4())
+        self.save()
+
+    @property
+    def install_id(self) -> str:
+        iid = (self._public.get("install_id") or "").strip()
+        if not iid:
+            self._ensure_install_id()
+            iid = (self._public.get("install_id") or "").strip()
+        return iid
+
+    def needs_setup(self) -> bool:
+        """True on first run (wizard not finished and no player name yet)."""
+        if self._public.get("setup_complete"):
+            return False
+        return not bool((self.player_name or "").strip())
 
     @property
     def civ4_installations(self) -> dict:
@@ -254,6 +305,14 @@ class AppConfig:
             if cfg.get("enabled") and cfg.get("exe_path"):
                 result.append(edition)
         return result
+
+    def civ4_exe_paths_for_save_detection(self) -> list[str]:
+        """Exe path(s) used to detect PBEM save folders (respects preferred edition)."""
+        from src.launcher import civ4_exe_paths_for_detection
+        return civ4_exe_paths_for_detection(
+            self.civ4_installations,
+            self.preferred_edition,
+        )
 
     # Legacy property kept for backwards compat with old code paths
     @property
@@ -362,3 +421,11 @@ class AppConfig:
     def language(self, value: str):
         self._public["language"] = value
         self.save()
+
+    @property
+    def master_password(self) -> str:
+        """Return master password for encrypting game files.
+
+        Returns empty string if no master password is set or config is locked.
+        """
+        return self._master_password or ""

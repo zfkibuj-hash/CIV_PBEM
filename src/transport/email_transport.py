@@ -167,6 +167,34 @@ class EmailTransport(BaseTransport):
         except (IndexError, ValueError):
             return None, None
 
+    def _imap_search_game(self, imap, game_name: str):
+        """Find message ids for one game (subject contains game name)."""
+        queries = [
+            f'(SUBJECT "[CIV4PBEM] {game_name} |")',
+            f'(SUBJECT "[CIV4PBEM] {game_name}")',
+        ]
+        seen: set[bytes] = set()
+        ids: list[bytes] = []
+        for search_query in queries:
+            status, msg_ids = imap.search(None, search_query)
+            if status != "OK" or not msg_ids[0]:
+                continue
+            for msg_id in msg_ids[0].split():
+                if msg_id not in seen:
+                    seen.add(msg_id)
+                    ids.append(msg_id)
+        return ids
+
+    def _message_matches_game(
+        self, subject: str, game_name: str, remote_filename: str = "",
+    ) -> bool:
+        parsed_game, parsed_file = self._parse_subject(subject)
+        if parsed_game != game_name:
+            return False
+        if remote_filename:
+            return parsed_file == remote_filename
+        return bool(parsed_file)
+
     def upload(self, local_path: Path, remote_filename: str, game_name: str,
                to_email: str = "") -> bool:
         """Send save file as email attachment.
@@ -212,7 +240,7 @@ class EmailTransport(BaseTransport):
             logger.error(f"Email transport upload (send) failed: {e}")
             return False
 
-    def download(self, remote_filename: str, local_path: Path, game_name: str) -> bool:
+    def download(self, remote_filename: str, local_path: Path, game_name: str, **kwargs) -> bool:
         """Download a specific save file from the mailbox (IMAP or POP3)."""
         if self.incoming_protocol == "pop3":
             return self._download_pop3(remote_filename, local_path, game_name)
@@ -225,13 +253,16 @@ class EmailTransport(BaseTransport):
             imap = self._get_imap()
             imap.select("INBOX")
 
-            search_query = f'(SUBJECT "[CIV4PBEM] {game_name}")'
+            search_query = f'(SUBJECT "[CIV4PBEM] {game_name} |")'
             status, msg_ids = imap.search(None, search_query)
             if status != "OK" or not msg_ids[0]:
+                ids = self._imap_search_game(imap, game_name)
+            else:
+                ids = msg_ids[0].split()
+            if not ids:
                 imap.logout()
                 return False
 
-            ids = msg_ids[0].split()
             for msg_id in reversed(ids):
                 status, data = imap.fetch(msg_id, "(RFC822)")
                 if status != "OK":
@@ -317,14 +348,12 @@ class EmailTransport(BaseTransport):
             imap = self._get_imap()
             imap.select("INBOX")
 
-            search_query = f'(SUBJECT "[CIV4PBEM] {game_name}")'
-            status, msg_ids = imap.search(None, search_query)
-            if status != "OK" or not msg_ids[0]:
+            ids = self._imap_search_game(imap, game_name)
+            if not ids:
                 imap.logout()
                 return []
 
             files = []
-            ids = msg_ids[0].split()
             for msg_id in ids:
                 status, data = imap.fetch(msg_id, "(RFC822)")
                 if status != "OK":
@@ -367,6 +396,61 @@ class EmailTransport(BaseTransport):
         files = self.list_files(game_name)
         return remote_filename in files
 
+    def delete(self, remote_filename: str, game_name: str) -> bool:
+        """Delete the mailbox message that carries this save attachment."""
+        if self.incoming_protocol == "pop3":
+            return self._delete_pop3(remote_filename, game_name)
+        return self._delete_imap(remote_filename, game_name)
+
+    def _delete_imap(self, remote_filename: str, game_name: str) -> bool:
+        try:
+            imap = self._get_imap()
+            imap.select("INBOX")
+            ids = self._imap_search_game(imap, game_name)
+            if not ids:
+                imap.logout()
+                return False
+            for msg_id in ids:
+                status, data = imap.fetch(msg_id, "(RFC822)")
+                if status != "OK":
+                    continue
+                msg = email.message_from_bytes(data[0][1])
+                subject = self._decode_header(msg.get("Subject", ""))
+                _parsed_game, parsed_file = self._parse_subject(subject)
+                if parsed_file == remote_filename:
+                    imap.store(msg_id, "+FLAGS", "\\Deleted")
+                    imap.expunge()
+                    imap.logout()
+                    logger.info("Email/IMAP: deleted %s", remote_filename)
+                    self._connected = True
+                    return True
+            imap.logout()
+            return False
+        except Exception as e:
+            logger.error("Email/IMAP delete failed: %s", e)
+            return False
+
+    def _delete_pop3(self, remote_filename: str, game_name: str) -> bool:
+        try:
+            pop3 = self._get_pop3()
+            num_messages = len(pop3.list()[1])
+            for i in range(num_messages, 0, -1):
+                lines = pop3.top(i, 0)[1]
+                msg = email.message_from_bytes(b"\r\n".join(lines))
+                subject = self._decode_header(msg.get("Subject", ""))
+                parsed_game, parsed_file = self._parse_subject(subject)
+                if parsed_game == game_name and parsed_file == remote_filename:
+                    pop3.dele(i)
+                    pop3.quit()
+                    logger.info("Email/POP3: deleted %s", remote_filename)
+                    self._connected = True
+                    return True
+            pop3.quit()
+            return False
+        except Exception as e:
+            logger.error("Email/POP3 delete failed: %s", e)
+            return False
+
     def _decode_header(self, header_value: str) -> str:
         """Decode a potentially encoded email header."""
         if not header_value:
@@ -382,36 +466,46 @@ class EmailTransport(BaseTransport):
 
 
     def purge_game(self, game_name: str) -> tuple[bool, int]:
-        """Delete ALL emails associated with a specific game from the mailbox.
+        """Delete ALL emails associated with a specific game from the mailbox."""
+        if self.incoming_protocol == "pop3":
+            return self._purge_game_pop3(game_name)
+        return self._purge_game_imap(game_name)
 
-        Searches for emails with subject containing "[CIV4PBEM] {game_name}"
-        and marks them for deletion. Does NOT affect other games.
-
-        Returns:
-            (success, count_deleted)
-        """
+    def _purge_game_imap(self, game_name: str) -> tuple[bool, int]:
         try:
             imap = self._get_imap()
             imap.select("INBOX")
-
-            search_query = f'(SUBJECT "[CIV4PBEM] {game_name}")'
-            status, msg_ids = imap.search(None, search_query)
-            if status != "OK" or not msg_ids[0]:
+            ids = self._imap_search_game(imap, game_name)
+            if not ids:
                 imap.logout()
-                return True, 0  # No messages to delete = success
+                return True, 0
 
-            ids = msg_ids[0].split()
-            count = 0
             for msg_id in ids:
                 imap.store(msg_id, "+FLAGS", "\\Deleted")
-                count += 1
 
-            # Permanently remove flagged messages
             imap.expunge()
             imap.logout()
-
-            logger.info(f"Purged {count} emails for game '{game_name}'")
-            return True, count
+            logger.info("Purged %s emails for game '%s'", len(ids), game_name)
+            return True, len(ids)
         except Exception as e:
             logger.error(f"Failed to purge emails for game '{game_name}': {e}")
+            return False, 0
+
+    def _purge_game_pop3(self, game_name: str) -> tuple[bool, int]:
+        try:
+            pop3 = self._get_pop3()
+            num_messages = len(pop3.list()[1])
+            count = 0
+            for i in range(num_messages, 0, -1):
+                lines = pop3.top(i, 0)[1]
+                msg = email.message_from_bytes(b"\r\n".join(lines))
+                subject = self._decode_header(msg.get("Subject", ""))
+                if self._message_matches_game(subject, game_name):
+                    pop3.dele(i)
+                    count += 1
+            pop3.quit()
+            logger.info("Purged %s POP3 emails for game '%s'", count, game_name)
+            return True, count
+        except Exception as e:
+            logger.error(f"Failed to purge POP3 emails for game '{game_name}': {e}")
             return False, 0

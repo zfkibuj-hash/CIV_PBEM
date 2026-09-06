@@ -39,6 +39,21 @@ QPushButton:hover {
 QPushButton:pressed {
     background-color: #1a1a2e;
 }
+QPushButton#btn_play_now {
+    background-color: #2e7d32;
+    border-color: #66bb6a;
+    color: white;
+    font-weight: bold;
+    font-size: 12pt;
+}
+QPushButton#btn_play_now:hover {
+    background-color: #388e3c;
+}
+QPushButton#btn_play_now:disabled {
+    background-color: #1b3d1f;
+    border-color: #336633;
+    color: #888;
+}
 QPushButton#btn_download {
     background-color: #1b5e20;
     border-color: #4caf50;
@@ -98,6 +113,52 @@ QLabel#banner_your_turn {
     font-size: 11pt;
 }
 QLabel#banner_waiting {
+    background-color: #2d2d2d;
+    color: #9e9e9e;
+    padding: 8px 16px;
+    font-size: 10pt;
+}
+QLabel#banner_winner {
+    background-color: #b8860b;
+    color: white;
+    padding: 8px 16px;
+    font-weight: bold;
+    font-size: 11pt;
+}
+QLabel#health_ok {
+    background-color: #1b5e20;
+    color: #c8e6c9;
+    padding: 6px 16px;
+    font-size: 10pt;
+}
+QLabel#health_info {
+    background-color: #263238;
+    color: #b0bec5;
+    padding: 6px 16px;
+    font-size: 10pt;
+}
+QLabel#health_warn {
+    background-color: #e65100;
+    color: white;
+    padding: 6px 16px;
+    font-size: 10pt;
+    font-weight: bold;
+}
+QLabel#health_error {
+    background-color: #b71c1c;
+    color: white;
+    padding: 6px 16px;
+    font-size: 10pt;
+    font-weight: bold;
+}
+QLabel#status_banner[state="your_turn"] {
+    background-color: #1b5e20;
+    color: white;
+    padding: 8px 16px;
+    font-weight: bold;
+    font-size: 11pt;
+}
+QLabel#status_banner[state="waiting"] {
     background-color: #2d2d2d;
     color: #9e9e9e;
     padding: 8px 16px;
@@ -207,6 +268,21 @@ QPushButton:hover {
 QPushButton:pressed {
     background-color: #bbdefb;
 }
+QPushButton#btn_play_now {
+    background-color: #2e7d32;
+    border-color: #66bb6a;
+    color: white;
+    font-weight: bold;
+    font-size: 12pt;
+}
+QPushButton#btn_play_now:hover {
+    background-color: #388e3c;
+}
+QPushButton#btn_play_now:disabled {
+    background-color: #1b3d1f;
+    border-color: #336633;
+    color: #888;
+}
 QPushButton#btn_download {
     background-color: #4caf50;
     border-color: #388e3c;
@@ -267,6 +343,26 @@ QLabel#banner_your_turn {
     font-size: 11pt;
 }
 QLabel#banner_waiting {
+    background-color: #eeeeee;
+    color: #616161;
+    padding: 8px 16px;
+    font-size: 10pt;
+}
+QLabel#banner_winner {
+    background-color: #ffc107;
+    color: #111111;
+    padding: 8px 16px;
+    font-weight: bold;
+    font-size: 11pt;
+}
+QLabel#status_banner[state="your_turn"] {
+    background-color: #4caf50;
+    color: white;
+    padding: 8px 16px;
+    font-weight: bold;
+    font-size: 11pt;
+}
+QLabel#status_banner[state="waiting"] {
     background-color: #eeeeee;
     color: #616161;
     padding: 8px 16px;

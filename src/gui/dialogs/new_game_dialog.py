@@ -3,12 +3,12 @@ NewGameDialog — dialog for creating a new PBEM game.
 """
 from typing import Optional
 
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QComboBox, QGroupBox, QListWidget,
     QPushButton, QDialogButtonBox, QMessageBox,
 )
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from src.config import AppConfig
 from src.models.game import Game, Player
@@ -32,9 +32,14 @@ class NewGameDialog(QDialog):
         layout = QVBoxLayout(self)
 
         form = QFormLayout()
+        name_row = QHBoxLayout()
         self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("np. WojnaSwiatowa")
-        form.addRow(t("game_name"), self.name_edit)
+        self.name_edit.setPlaceholderText(t("game_name_placeholder"))
+        name_row.addWidget(self.name_edit)
+        btn_random = QPushButton(t("random_game_name"))
+        btn_random.clicked.connect(self._randomize_name)
+        name_row.addWidget(btn_random)
+        form.addRow(t("game_name"), name_row)
 
         self.admin_password_edit = QLineEdit()
         self.admin_password_edit.setPlaceholderText(t("admin_password_placeholder"))
@@ -97,6 +102,23 @@ class NewGameDialog(QDialog):
         else:
             self._players_data = []
 
+        self._randomize_name()
+
+    def _existing_game_names(self) -> set[str]:
+        from src.config import get_games_dir
+        names = set()
+        try:
+            for f in get_games_dir().glob("*.json"):
+                if not f.stem.endswith("_remote"):
+                    names.add(f.stem)
+        except Exception:
+            pass
+        return names
+
+    def _randomize_name(self):
+        from src.game_names import generate_game_name
+        self.name_edit.setText(generate_game_name(self._existing_game_names()))
+
     def _add_player(self):
         name = self.player_name_edit.text().strip()
         email = self.player_email_edit.text().strip()
@@ -118,6 +140,33 @@ class NewGameDialog(QDialog):
         if not name or len(self._players_data) < 2:
             QMessageBox.warning(self, t("error"), t("error_min_players"))
             return None
+
+        existing = self._existing_game_names()
+        if name.lower() in {n.lower() for n in existing}:
+            QMessageBox.warning(self, t("error"), t("game_name_taken", name=name))
+            return None
+
+        # Validate game name: only alphanumeric, underscore, hyphen allowed
+        import re
+        if not re.match(r'^[a-zA-Z0-9_\-]+$', name):
+            QMessageBox.warning(
+                self, t("error"),
+                "Nazwa gry moze zawierac tylko litery, cyfry, podkreslniki i myslniki.\n"
+                "Game name can only contain letters, digits, underscores, and hyphens."
+            )
+            return None
+
+        # Validate player names: no characters that break filename patterns
+        for p in self._players_data:
+            pname = p["name"]
+            if not re.match(r'^[a-zA-Z0-9_\-]+$', pname):
+                QMessageBox.warning(
+                    self, t("error"),
+                    f"Nazwa gracza '{pname}' zawiera niedozwolone znaki.\n"
+                    f"Dozwolone: litery, cyfry, podkreslniki, myslniki.\n\n"
+                    f"Player name '{pname}' contains disallowed characters."
+                )
+                return None
 
         players = [
             Player(name=p["name"], email=p["email"], order=i)

@@ -170,8 +170,7 @@ def _try_mozilla_autoconfig(domain: str, email: str, timeout: int) -> Optional[E
         urls = [
             f"https://autoconfig.{domain}/mail/config-v1.1.xml",
             f"https://{domain}/.well-known/autoconfig/mail/config-v1.1.xml",
-            f"http://autoconfig.{domain}/mail/config-v1.1.xml",
-            # Mozilla ISPDB fallback
+            # Mozilla ISPDB fallback (HTTPS only)
             f"https://autoconfig.thunderbird.net/v1.1/{domain}",
         ]
         for url in urls:
