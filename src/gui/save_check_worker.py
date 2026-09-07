@@ -115,9 +115,11 @@ class SaveCheckWorker(QObject):
                 )
                 if data:
                     payloads.append((name, data))
+                    from src.models.game import Game
+                    who = Game.waiting_player_from_payload(data)
                     notifications.append(
                         t("import_sync_ok", turn=data.get("current_turn", 0),
-                          player=data.get("waiting_for") or data.get("winner") or "?"),
+                          player=who),
                     )
                     logger.info("SaveCheckWorker %s ok via %s", name, fname)
                 else:

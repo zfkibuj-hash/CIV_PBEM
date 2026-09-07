@@ -72,6 +72,35 @@ QPushButton#btn_upload {
 QPushButton#btn_upload:hover {
     background-color: #1565c0;
 }
+QPushButton::menu-indicator {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    right: 6px;
+}
+QPushButton#menu_btn {
+    padding-right: 22px;
+}
+QMenu {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    border: 1px solid #555;
+    padding: 4px;
+}
+QMenu::item {
+    padding: 8px 28px 8px 14px;
+    border-radius: 3px;
+}
+QMenu::item:selected {
+    background-color: #383838;
+}
+QMenu::item:disabled {
+    color: #777;
+}
+QMenu::separator {
+    height: 1px;
+    background: #555;
+    margin: 4px 8px;
+}
 QListWidget {
     background-color: #252536;
     border: 1px solid #555;
@@ -300,6 +329,35 @@ QPushButton#btn_upload {
 }
 QPushButton#btn_upload:hover {
     background-color: #42a5f5;
+}
+QPushButton::menu-indicator {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    right: 6px;
+}
+QPushButton#menu_btn {
+    padding-right: 22px;
+}
+QMenu {
+    background-color: #ffffff;
+    color: #212121;
+    border: 1px solid #bdbdbd;
+    padding: 4px;
+}
+QMenu::item {
+    padding: 8px 28px 8px 14px;
+    border-radius: 3px;
+}
+QMenu::item:selected {
+    background-color: #e3f2fd;
+}
+QMenu::item:disabled {
+    color: #9e9e9e;
+}
+QMenu::separator {
+    height: 1px;
+    background: #bdbdbd;
+    margin: 4px 8px;
 }
 QListWidget {
     background-color: #ffffff;

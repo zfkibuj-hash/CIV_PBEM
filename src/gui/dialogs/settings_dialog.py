@@ -896,10 +896,6 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, t("error"), t("password_empty"))
             return
 
-        if len(new_pass) < 4:
-            QMessageBox.warning(self, t("error"), t("password_empty"))
-            return
-
         if new_pass != confirm:
             QMessageBox.warning(self, t("error"), t("password_mismatch"))
             return

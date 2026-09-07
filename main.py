@@ -631,8 +631,20 @@ def main():
                 t("shared_config_failed", name=game.name, msg=msg)
             )
 
+    def _on_queue_publish(game):
+        if not game:
+            return
+        ok, msg = controller.publish_turn_state(
+            game, repair_from_local_saves=False,
+        )
+        window.status_label.setText(msg)
+        window._update_game_view()
+        if not ok:
+            QMessageBox.warning(window, t("error"), msg)
+
     window.settings_saved.connect(_on_settings_saved)
     window.push_shared_config_requested.connect(_on_push_shared_config)
+    window.queue_publish_requested.connect(_on_queue_publish)
     window.roster_events_requested.connect(controller.notify_roster_events)
 
     def _ask_admin_password(game) -> bool:
@@ -663,6 +675,19 @@ def main():
         if window.current_game:
             game = window.current_game
             from src.gui.dialogs.choose_save_dialog import ChooseSaveDialog
+
+            # Your turn: grab the incoming file by name. Do not NLST — FTP
+            # listing is disabled and used to show a fake "no saves" dialog.
+            mine = controller.incoming_save_for_me(game)
+            if mine:
+                _ignore_save_in_watcher(mine)
+                success, msg = controller.download_specific_save(
+                    game, mine, watcher=watcher
+                )
+                window.status_label.setText(msg)
+                if success:
+                    window._update_game_view()
+                return
 
             all_saves = controller.list_remote_saves(game)
             if not all_saves:
@@ -917,6 +942,20 @@ def main():
                         continue
                     snap = g.roster_event_snapshot()
                     controller.apply_state_dict(g, data, emit_signal=False)
+                    from src.models.game import Game as GameModel
+                    remote_rank = GameModel.payload_state_rank(data)
+                    local_rank = (
+                        int(g.state_revision or 0),
+                        int(g.save_seq or 0),
+                        len(g.history),
+                    )
+                    if local_rank > remote_rank:
+                        try:
+                            controller.publish_turn_state(
+                                g, repair_from_local_saves=False,
+                            )
+                        except Exception:
+                            logger.exception("publish newer local state failed")
                     for ev in g.roster_events_since(*snap):
                         key = (name, ev.get("kind"), ev.get("player"))
                         if key in seen_keys:
@@ -977,12 +1016,6 @@ def main():
                         if game.history and game.is_my_turn(my_name):
                             tray.notify_your_turn(game.name, game.current_turn)
                 _auto_launch_after_download(result.downloaded)
-            elif result.notifications:
-                status_msg = " | ".join(result.notifications)
-                if tray.is_available:
-                    for game in window.games:
-                        if game.history and game.is_my_turn(my_name):
-                            tray.notify_your_turn(game.name, game.current_turn)
             elif result.already_local:
                 status_msg = t(
                     "status_check_summary",
@@ -993,14 +1026,26 @@ def main():
             else:
                 status_msg = t("no_new_saves")
 
-            window.set_status(status_msg, clear_after_ms=12000)
-
             if result.health_report is not None:
                 window.set_health_report(result.health_report)
                 _last_health_level = result.health_report.worst_level
 
             window._load_games()
             window._refresh_health_from_games()
+
+            if not result.downloaded:
+                sync_parts = []
+                for g in window.games:
+                    if not g.history:
+                        continue
+                    who = g.current_player.name if g.current_player else "?"
+                    sync_parts.append(
+                        t("import_sync_ok", turn=g.current_turn, player=who),
+                    )
+                if sync_parts:
+                    status_msg = " | ".join(sync_parts)
+
+            window.set_status(status_msg, clear_after_ms=12000)
 
             if result.downloaded:
                 joined = "\n\n".join(f"{n}: {m}" for n, m in result.downloaded)

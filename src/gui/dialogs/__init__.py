@@ -11,6 +11,7 @@ from src.gui.dialogs.setup_wizard import SetupWizard
 from src.gui.dialogs.choose_save_dialog import ChooseSaveDialog
 from src.gui.dialogs.choose_save_path_dialog import ChooseSavePathDialog
 from src.gui.dialogs.danger_zone_dialog import DangerZoneDialog
+from src.gui.dialogs.edit_queue_dialog import EditQueueDialog
 
 __all__ = [
     "SettingsDialog",
@@ -22,4 +23,5 @@ __all__ = [
     "ChooseSaveDialog",
     "ChooseSavePathDialog",
     "DangerZoneDialog",
+    "EditQueueDialog",
 ]

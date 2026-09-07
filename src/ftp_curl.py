@@ -148,7 +148,10 @@ def pull_game_state_json(
 
     base = f"{(remote_dir or '/civ4pbem').rstrip('/')}/{game_name}"
     last_err = ""
-    # One path each — do NOT multiply retries (watchdog is ~8–10s)
+    best: Optional[dict] = None
+    best_name = ""
+    best_rank = (-1, -1, -1)
+    from src.models.game import Game
     for name in (f"{game_name}_turns.json", f"{game_name}_state.json"):
         path = f"{base}/{name}"
         raw, err = curl_get(
@@ -163,10 +166,21 @@ def pull_game_state_json(
         except Exception as e:
             last_err = f"bad json: {e}"
             continue
-        if isinstance(data, dict) and (
+        if not isinstance(data, dict):
+            last_err = "not an object"
+            continue
+        has_hist = bool(
             data.get("history")
             or (isinstance(data.get("game"), dict) and data["game"].get("history"))
-        ):
-            return data, name, ""
-        last_err = "empty history in file"
+        )
+        if not has_hist:
+            last_err = "empty history in file"
+            continue
+        rank = Game.payload_state_rank(data)
+        if rank > best_rank:
+            best_rank = rank
+            best = data
+            best_name = name
+    if best is not None:
+        return best, best_name, ""
     return None, "", last_err or "no turns/state on FTP"

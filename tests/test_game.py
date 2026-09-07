@@ -89,6 +89,21 @@ class LatestSaveSeqTests(unittest.TestCase):
         self.assertTrue(game.sync_save_seq_from_filenames(remote))
         self.assertEqual(game.save_seq, 3)
 
+    def test_ensure_unique_ignores_stale_local_seq(self):
+        game = _game()
+        game.save_seq = 1
+        remote = [
+            "0000_Kuzyny_T0000_from_Mihau_to_Cantrol.CivBeyondSwordSave",
+            "0001_Kuzyny_T0000_from_Cantrol_to_SzyMen.CivBeyondSwordSave",
+            "0002_Kuzyny_T0000_from_SzyMen_to_OtaSkyworker.CivBeyondSwordSave",
+            "0001_Kuzyny_T0001_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+        ]
+        self.assertEqual(game.ensure_unique_save_seq(remote), 3)
+        self.assertEqual(
+            game.get_save_filename("Mihau"),
+            "0003_Kuzyny_T0003_from_Mihau_to_Cantrol.CivBeyondSwordSave",
+        )
+
     def test_repair_prefers_highest_seq(self):
         game = _game()
         game.current_turn = 0
@@ -101,15 +116,120 @@ class LatestSaveSeqTests(unittest.TestCase):
         self.assertEqual(game.current_player.name, "SzyMen")
         self.assertEqual(game.save_seq, 2)
 
+    def test_repair_does_not_rewind_when_local_folder_is_behind(self):
+        """After upload, Civ4 folder often still has only the incoming 0003."""
+        game = _game()
+        game.players.append(Player("OtaSkyworker", "d@test.com", 3))
+        game.current_turn = 1
+        game.current_player_index = 1
+        game.save_seq = 5
+        game.history = [
+            Turn(0, "Mihau", filename="0000_Kuzyny_T0000_from_Mihau_to_Cantrol.CivBeyondSwordSave"),
+            Turn(0, "Cantrol", filename="0001_Kuzyny_T0000_from_Cantrol_to_SzyMen.CivBeyondSwordSave"),
+            Turn(0, "SzyMen", filename="0002_Kuzyny_T0000_from_SzyMen_to_OtaSkyworker.CivBeyondSwordSave"),
+            Turn(0, "OtaSkyworker", filename="0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave"),
+            Turn(1, "Mihau", filename="0004_Kuzyny_T0001_from_Mihau_to_Cantrol.CivBeyondSwordSave"),
+        ]
+        local_only = [
+            "0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+        ]
+        self.assertFalse(game.repair_turn_state_from_saves(local_only))
+        self.assertEqual(game.current_player.name, "Cantrol")
+        self.assertEqual(game.current_turn, 1)
+        self.assertEqual(game.save_seq, 5)
+
+
+class WaitingFromPayloadTests(unittest.TestCase):
+    def test_latest_save_beats_stale_waiting_for(self):
+        data = {
+            "waiting_for": "Mihau",
+            "current_player_index": 0,
+            "state_revision": 80,
+            "save_seq": 4,
+            "history": [
+                {"turn_number": 0, "player_name": "OtaSkyworker",
+                 "filename": "0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave"},
+                {"turn_number": 1, "player_name": "Mihau",
+                 "filename": "0004_Kuzyny_T0001_from_Mihau_to_Cantrol.CivBeyondSwordSave"},
+            ],
+        }
+        self.assertEqual(Game.waiting_player_from_payload(data), "Cantrol")
+        self.assertGreater(
+            Game.payload_state_rank({**data, "state_revision": 99, "save_seq": 5, "history": data["history"] + [{}]}),
+            Game.payload_state_rank(data),
+        )
+
+    def test_stale_turns_log_does_not_rewind(self):
+        game = _game()
+        game.players.append(Player("OtaSkyworker", "d@test.com", 3))
+        game.current_turn = 1
+        game.current_player_index = 1
+        game.save_seq = 5
+        game.state_revision = 99
+        game.history = [
+            Turn(1, "Mihau", filename="0004_Kuzyny_T0001_from_Mihau_to_Cantrol.CivBeyondSwordSave"),
+        ]
+        stale = {
+            "state_revision": 80,
+            "save_seq": 4,
+            "current_player_index": 0,
+            "waiting_for": "Mihau",
+            "history": [
+                {"turn_number": 0, "player_name": "OtaSkyworker",
+                 "filename": "0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave"},
+            ],
+        }
+        game.apply_turns_log(stale)
+        self.assertEqual(game.current_player.name, "Cantrol")
+        self.assertEqual(game.save_seq, 5)
+        self.assertEqual(game.state_revision, 99)
+
+    def test_turn_holder_follows_highest_seq_recipient(self):
+        game = _game()
+        remote = [
+            "0000_Kuzyny_T0000_from_Mihau_to_Cantrol.CivBeyondSwordSave",
+            "0001_Kuzyny_T0000_from_Cantrol_to_SzyMen.CivBeyondSwordSave",
+            "0002_Kuzyny_T0000_from_SzyMen_to_Mihau.CivBeyondSwordSave",
+        ]
+        self.assertEqual(game.turn_holder_from_saves(remote), "Mihau")
+        # A later replay with a lower seq must not steal the turn
+        remote.append(
+            "0000_Kuzyny_T0001_from_SzyMen_to_Mihau.CivBeyondSwordSave",
+        )
+        self.assertEqual(game.turn_holder_from_saves(remote), "Mihau")
+
 
 class IsMyTurnTests(unittest.TestCase):
-    def test_current_player(self):
+    def setUp(self):
+        self.game = _game()
+        self.game.history = [
+            Turn(
+                3, "SzyMen",
+                filename="0002_Kuzyny_T0003_from_SzyMen_to_Mihau.CivBeyondSwordSave",
+            ),
+        ]
+
+    def test_already_uploaded_latest_blocks_resend(self):
         game = _game()
+        game.current_player_index = 1
+        game.history = [
+            Turn(1, "Mihau", filename="0004_Kuzyny_T0001_from_Mihau_to_Cantrol.CivBeyondSwordSave"),
+            Turn(1, "Cantrol", filename="0005_Kuzyny_T0001_from_Cantrol_to_SzyMen.CivBeyondSwordSave"),
+        ]
+        self.assertEqual(
+            game.already_uploaded_latest("Cantrol"),
+            "0005_Kuzyny_T0001_from_Cantrol_to_SzyMen.CivBeyondSwordSave",
+        )
+        self.assertIsNone(game.already_uploaded_latest("SzyMen"))
+        self.assertIsNone(game.already_uploaded_latest("Mihau"))
+
+    def test_current_player(self):
+        game = self.game
         self.assertTrue(game.is_my_turn("Mihau"))
         self.assertFalse(game.is_my_turn("Cantrol"))
 
     def test_case_insensitive(self):
-        game = _game()
+        game = self.game
         game.current_player_index = 1
         self.assertTrue(game.is_my_turn("cantrol"))
         self.assertTrue(
@@ -120,7 +240,7 @@ class IsMyTurnTests(unittest.TestCase):
         )
 
     def test_alias_resolves_to_game_player(self):
-        game = _game()
+        game = self.game
         game.local_player_alias = "Mihau"
         self.assertEqual(game.get_game_player_name("LocalNick"), "Mihau")
         self.assertTrue(game.is_my_turn("LocalNick"))
@@ -129,8 +249,17 @@ class IsMyTurnTests(unittest.TestCase):
 
 
 class ValidateUploadTests(unittest.TestCase):
+    def setUp(self):
+        self.game = _game()
+        self.game.history = [
+            Turn(
+                3, "SzyMen",
+                filename="0002_Kuzyny_T0003_from_SzyMen_to_Mihau.CivBeyondSwordSave",
+            ),
+        ]
+
     def test_native_ok(self):
-        game = _game()
+        game = self.game
         ok, key = game.validate_upload_filename(
             "Kuzyny_4000BC_to_Caesar.CivBeyondSwordSave", "Mihau",
         )
@@ -138,7 +267,7 @@ class ValidateUploadTests(unittest.TestCase):
         self.assertEqual(key, "")
 
     def test_native_wrong_leader(self):
-        game = _game()
+        game = self.game
         ok, key = game.validate_upload_filename(
             "Kuzyny_4000BC_to_Montezuma.CivBeyondSwordSave", "Mihau",
         )
@@ -146,7 +275,7 @@ class ValidateUploadTests(unittest.TestCase):
         self.assertEqual(key, "upload_wrong_leader")
 
     def test_native_still_your_turn(self):
-        game = _game()
+        game = self.game
         ok, key = game.validate_upload_filename(
             "Kuzyny_4000BC_to_Mihau.CivBeyondSwordSave", "Mihau",
         )
@@ -154,7 +283,7 @@ class ValidateUploadTests(unittest.TestCase):
         self.assertEqual(key, "upload_still_your_turn")
 
     def test_managed_wrong_recipient(self):
-        game = _game()
+        game = self.game
         ok, key = game.validate_upload_filename(
             "Kuzyny_T0003_from_Mihau_to_SzyMen.CivBeyondSwordSave", "Mihau",
         )
@@ -162,7 +291,7 @@ class ValidateUploadTests(unittest.TestCase):
         self.assertEqual(key, "upload_wrong_recipient")
 
     def test_not_your_turn(self):
-        game = _game()
+        game = self.game
         game.current_player_index = 1
         ok, key = game.validate_upload_filename(
             "Kuzyny_4000BC_to_Caesar.CivBeyondSwordSave", "Mihau",
@@ -427,6 +556,143 @@ class WinnerTests(unittest.TestCase):
         self.assertEqual(log["players"][0]["status"], "active")
 
 
+class ManualQueueTests(unittest.TestCase):
+    def test_apply_sets_waiting_history_and_seq(self):
+        game = _game()
+        game.players.append(Player("OtaSkyworker", "", 3))
+        game.current_turn = 4
+        game.current_player_index = 3
+        game.state_revision = 13
+        err = game.apply_manual_queue(
+            ["Mihau", "Cantrol", "SzyMen", "OtaSkyworker"],
+            [
+                {
+                    "filename": "0000_Kuzyny_T0000_from_Mihau_to_Cantrol.CivBeyondSwordSave",
+                    "turn_number": 0,
+                    "from_name": "Mihau",
+                },
+                {
+                    "filename": "0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+                    "turn_number": 0,
+                    "from_name": "OtaSkyworker",
+                },
+            ],
+            "Mihau",
+            1,
+            4,
+        )
+        self.assertEqual(err, "")
+        self.assertEqual(game.current_player_index, 0)
+        self.assertEqual(game.current_turn, 1)
+        self.assertEqual(game.save_seq, 4)
+        self.assertEqual(game.state_revision, 18)
+        self.assertEqual(len(game.history), 2)
+        self.assertEqual(
+            game.incoming_save_filename(),
+            "0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+        )
+        self.assertEqual([p.name for p in game.players], [
+            "Mihau", "Cantrol", "SzyMen", "OtaSkyworker",
+        ])
+
+    def test_reorder_players(self):
+        game = _game()
+        err = game.apply_manual_queue(
+            ["SzyMen", "Mihau", "Cantrol"],
+            [{
+                "filename": "0000_Kuzyny_T0000_from_SzyMen_to_Mihau.CivBeyondSwordSave",
+                "turn_number": 0,
+                "from_name": "SzyMen",
+            }],
+            "Mihau",
+            1,
+            1,
+        )
+        self.assertEqual(err, "")
+        self.assertEqual([p.name for p in game.players], ["SzyMen", "Mihau", "Cantrol"])
+        self.assertEqual([p.order for p in game.players], [0, 1, 2])
+        self.assertEqual(game.current_player.name, "Mihau")
+
+    def test_rejects_duplicate_filename(self):
+        game = _game()
+        same = "0000_Kuzyny_T0000_from_Mihau_to_Cantrol.CivBeyondSwordSave"
+        err = game.apply_manual_queue(
+            ["Mihau", "Cantrol", "SzyMen"],
+            [
+                {"filename": same, "turn_number": 0, "from_name": "Mihau"},
+                {"filename": same, "turn_number": 0, "from_name": "Mihau"},
+            ],
+            "Cantrol",
+            0,
+            1,
+        )
+        self.assertEqual(err, "queue_err_dup_file")
+
+    def test_managed_save_filename(self):
+        game = _game()
+        self.assertEqual(
+            game.managed_save_filename(3, 0, "OtaSkyworker", "Mihau"),
+            "0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+        )
+
+    def test_slot_from_save_filename(self):
+        game = _game()
+        slot = game.slot_from_save_filename(
+            "0002_Kuzyny_T0000_from_SzyMen_to_OtaSkyworker.CivBeyondSwordSave",
+            timestamp=10.0,
+        )
+        self.assertEqual(slot["seq"], 2)
+        self.assertEqual(slot["turn_number"], 0)
+        self.assertEqual(slot["from_name"], "SzyMen")
+        self.assertEqual(slot["to_name"], "OtaSkyworker")
+
+
+class IncomingSaveFilenameTests(unittest.TestCase):
+    def test_seq_beats_scrambled_history_order(self):
+        game = _game()
+        game.history = [
+            Turn(
+                1, "OtaSkyworker",
+                filename="0001_Kuzyny_T0001_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+            ),
+            Turn(
+                0, "SzyMen",
+                filename="0002_Kuzyny_T0000_from_SzyMen_to_OtaSkyworker.CivBeyondSwordSave",
+            ),
+            Turn(
+                0, "OtaSkyworker",
+                filename="0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+            ),
+        ]
+        self.assertEqual(
+            game.incoming_save_filename(),
+            "0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+        )
+
+    def test_lower_seq_ghost_is_not_incoming(self):
+        game = _game()
+        game.history = [
+            Turn(
+                0, "OtaSkyworker",
+                filename="0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+            ),
+            Turn(
+                1, "OtaSkyworker",
+                filename="0001_Kuzyny_T0001_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+            ),
+        ]
+        self.assertEqual(
+            game.incoming_save_filename(),
+            "0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+        )
+
+    def test_history_filenames_unique(self):
+        game = _game()
+        same = "0003_Kuzyny_T0000_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave"
+        game.history = [Turn(0, "OtaSkyworker", filename=same), Turn(1, "x", filename=same)]
+        self.assertEqual(game.history_save_filenames(), [same])
+
+
 class NormalizeListingTests(unittest.TestCase):
     def test_strips_ftp_full_paths(self):
         from src.transport.base import normalize_remote_listing
@@ -443,6 +709,34 @@ class NormalizeListingTests(unittest.TestCase):
                 "Kuzyny_state.json",
             ],
         )
+
+
+class HealthStatusTextTests(unittest.TestCase):
+    def setUp(self):
+        from src.i18n import set_language
+        set_language("en")
+
+    def test_waiting_not_you_can_play(self):
+        from src.health_check import HealthReport, HealthIssue, healthy_status_text
+        game = _game()
+        game.current_player_index = 1
+        game.history = [
+            Turn(1, "Mihau", filename="0004_Kuzyny_T0001_from_Mihau_to_Cantrol.CivBeyondSwordSave"),
+        ]
+        text = healthy_status_text([game], "Mihau")
+        self.assertIn("Cantrol", text)
+        self.assertNotIn("your turn", text.lower())
+        self.assertNotIn("you can play", text.lower())
+        report = HealthReport(issues=[HealthIssue("ok", "all_ok", text, "")])
+        self.assertEqual(report.summary(), text)
+
+    def test_your_turn(self):
+        from src.health_check import healthy_status_text
+        game = _game()
+        game.history = [
+            Turn(0, "SzyMen", filename="0002_Kuzyny_T0000_from_SzyMen_to_Mihau.CivBeyondSwordSave"),
+        ]
+        self.assertIn("your turn", healthy_status_text([game], "Mihau").lower())
 
 
 if __name__ == "__main__":

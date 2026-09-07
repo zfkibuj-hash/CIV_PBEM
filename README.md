@@ -1,4 +1,4 @@
-# Civ4 PBEM Manager v5.0
+# Civ4 PBEM Manager v5.0.5
 
 <p align="center">
   <img src="icon_preview.png" alt="Civ4 PBEM Manager" width="512"/>
@@ -119,7 +119,7 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 | Launcher | Steam / GOG / DVD, direct save load |
 | Languages | Polish, English (runtime switch) |
 | Security | AES-256 encrypted credentials |
-| History | Full turn log, revert to any turn |
+| History | Full turn log, revert, **manual queue / save slots** |
 | Roster | Active / defeated / resigned; winner |
 | Join | `.civ4pbem` file or invite code |
 | Statistics | Per-player times, averages |
@@ -129,6 +129,15 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 ---
 
 ## Changelog
+
+### v5.0.5
+
+**Queue repair and FTP sync**
+- **Queue and saves…** editor: reorder players, assign each save file to a slot, pick who is waiting, set the next upload number
+- Check does not rewind a newer local game with a stale server `turns.json`; the status bar shows who is actually waiting
+- A leftover local save no longer sets “your turn” again after you already uploaded
+- The same move is not uploaded again under a new sequence number (watcher / double-click)
+- **Download save** uses the filename from history (no empty FTP listing)
 
 ### v5.0.0
 
@@ -251,6 +260,14 @@ Aplikacja jest **koordynatorem**, nie klientem gry.
 3. Nowa gra → dodaj graczy → wybierz prędkość → skonfiguruj transport
 4. Eksportuj `.civ4pbem` **albo skopiuj kod zaproszenia** i wyślij innym graczom
 5. Graj turę → watchdog automatycznie wyśle save i powiadomi następnego gracza
+
+### Co nowego w v5.0.5
+
+- **Kolejka i save'y…**: reczna kolejnosc graczy, kazdy plik w slocie, kto czeka, nastepny numer uploadu
+- Check nie cofa nowszego stanu starym `turns.json` z serwera; pasek statusu pokazuje kto naprawde czeka
+- Lokalny stary save nie ustawia z powrotem Twojej tury po wysylce
+- Ten sam ruch nie idzie drugi raz jako kolejny numer pliku (watchdog / podwojny upload)
+- **Download save** bierze nazwe z historii (bez pustej listy z FTP)
 
 ### Co nowego w v5.0
 

@@ -9,10 +9,10 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem, QGroupBox,
     QLineEdit, QComboBox, QFileDialog, QMessageBox,
-    QApplication, QDialog, QCheckBox, QInputDialog,
+    QApplication, QDialog, QCheckBox, QInputDialog, QMenu,
 )
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QAction, QColor
 
 from src.config import AppConfig, version_label
 from src.models.game import Game, Player
@@ -25,7 +25,7 @@ from src.gui.styles import get_style_for_theme
 from src.gui.player_order_widget import PlayerOrderWidget
 from src.gui.dialogs import (
     SettingsDialog, NewGameDialog, GameTransportDialog,
-    GameStatsDialog, EditGameDialog, DangerZoneDialog,
+    GameStatsDialog, EditGameDialog, DangerZoneDialog, EditQueueDialog,
 )
 from src.gui.dialogs.health_dialog import HealthDialog
 from src.health_check import HealthReport
@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
     delete_game_requested = Signal()
     play_now_requested = Signal()
     push_shared_config_requested = Signal(object)
+    queue_publish_requested = Signal(object)
     roster_events_requested = Signal(object, list)  # Game, events
     game_imported = Signal(object)  # Game — pull turn state from server
     remind_requested = Signal(object)  # Game
@@ -130,6 +131,9 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(self.lbl_games)
 
         self.game_list = QListWidget()
+        self.game_list.setToolTip(t("game_list_hint"))
+        self.game_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.game_list.customContextMenuRequested.connect(self._on_game_list_menu)
         self.game_list.currentRowChanged.connect(self._on_game_selected)
         sidebar_layout.addWidget(self.game_list)
 
@@ -137,25 +141,17 @@ class MainWindow(QMainWindow):
         self.btn_new_game.clicked.connect(self._on_new_game)
         sidebar_layout.addWidget(self.btn_new_game)
 
-        self.btn_import_game = QPushButton(t("import_game"))
-        self.btn_import_game.clicked.connect(self._on_import_game)
-        sidebar_layout.addWidget(self.btn_import_game)
+        self.btn_join_game = QPushButton(t("join_game"))
+        self.btn_join_game.setObjectName("menu_btn")
+        self.btn_join_game.setToolTip(t("join_game_hint"))
+        sidebar_layout.addWidget(self.btn_join_game)
 
-        self.btn_export_game = QPushButton(t("export_game"))
-        self.btn_export_game.clicked.connect(self._on_export_game)
-        sidebar_layout.addWidget(self.btn_export_game)
+        self.btn_share_game = QPushButton(t("share_game"))
+        self.btn_share_game.setObjectName("menu_btn")
+        self.btn_share_game.setToolTip(t("share_game_hint"))
+        sidebar_layout.addWidget(self.btn_share_game)
 
-        invite_row = QHBoxLayout()
-        self.btn_copy_invite = QPushButton(t("copy_invite_code"))
-        self.btn_copy_invite.setToolTip(t("copy_invite_code_hint"))
-        self.btn_copy_invite.clicked.connect(self._on_export_invite_code)
-        invite_row.addWidget(self.btn_copy_invite)
-
-        self.btn_paste_invite = QPushButton(t("paste_invite_code"))
-        self.btn_paste_invite.setToolTip(t("paste_invite_code_hint"))
-        self.btn_paste_invite.clicked.connect(self._on_import_invite_code)
-        invite_row.addWidget(self.btn_paste_invite)
-        sidebar_layout.addLayout(invite_row)
+        self._build_join_share_menus()
 
         self.btn_game_transport = QPushButton(t("game_transport"))
         self.btn_game_transport.clicked.connect(self._on_game_transport)
@@ -164,6 +160,11 @@ class MainWindow(QMainWindow):
         self.btn_edit_game = QPushButton(t("edit_game"))
         self.btn_edit_game.clicked.connect(self._on_edit_game)
         sidebar_layout.addWidget(self.btn_edit_game)
+
+        self.btn_edit_queue = QPushButton(t("edit_queue"))
+        self.btn_edit_queue.setToolTip(t("edit_queue_hint"))
+        self.btn_edit_queue.clicked.connect(self._on_edit_queue)
+        sidebar_layout.addWidget(self.btn_edit_queue)
 
         self.btn_stats = QPushButton(t("statistics"))
         self.btn_stats.clicked.connect(self._on_statistics)
@@ -271,6 +272,11 @@ class MainWindow(QMainWindow):
         # Buttons row under history
         history_buttons = QHBoxLayout()
 
+        self.btn_edit_queue_hist = QPushButton(t("edit_queue"))
+        self.btn_edit_queue_hist.setToolTip(t("edit_queue_hint"))
+        self.btn_edit_queue_hist.clicked.connect(self._on_edit_queue)
+        history_buttons.addWidget(self.btn_edit_queue_hist)
+
         self.btn_revert = QPushButton(t("revert_selected"))
         self.btn_revert.setStyleSheet("color: #ff9800; border-color: #ff9800;")
         self.btn_revert.clicked.connect(self._on_revert_turn)
@@ -318,6 +324,65 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.status_label)
 
         main_layout.addWidget(right_panel)
+
+    def _build_join_share_menus(self):
+        """Join/Share are dropdowns so invite codes don't sit as cramped buttons."""
+        join_menu = QMenu(self.btn_join_game)
+        self.act_import_file = QAction(t("import_game"), self)
+        self.act_import_file.setToolTip(t("join_game_hint"))
+        self.act_import_file.triggered.connect(self._on_import_game)
+        self.act_paste_invite = QAction(t("paste_invite_code"), self)
+        self.act_paste_invite.setToolTip(t("paste_invite_code_hint"))
+        self.act_paste_invite.triggered.connect(self._on_import_invite_code)
+        join_menu.addAction(self.act_import_file)
+        join_menu.addAction(self.act_paste_invite)
+        self.btn_join_game.setMenu(join_menu)
+
+        share_menu = QMenu(self.btn_share_game)
+        self.act_export_file = QAction(t("export_game"), self)
+        self.act_export_file.setToolTip(t("share_game_hint"))
+        self.act_export_file.triggered.connect(self._on_export_game)
+        self.act_copy_invite = QAction(t("copy_invite_code"), self)
+        self.act_copy_invite.setToolTip(t("copy_invite_code_hint"))
+        self.act_copy_invite.triggered.connect(self._on_export_invite_code)
+        share_menu.addAction(self.act_export_file)
+        share_menu.addAction(self.act_copy_invite)
+        self.btn_share_game.setMenu(share_menu)
+        self._update_share_enabled()
+
+    def _update_share_enabled(self):
+        has_game = self.current_game is not None
+        if hasattr(self, "act_copy_invite"):
+            self.act_copy_invite.setEnabled(has_game)
+            self.act_export_file.setEnabled(has_game)
+
+    def _on_game_list_menu(self, pos):
+        """Right-click on the game list: invite / import / export."""
+        item = self.game_list.itemAt(pos)
+        if item is not None:
+            self.game_list.setCurrentItem(item)
+        menu = QMenu(self)
+        if item is not None:
+            act_copy = menu.addAction(t("copy_invite_code"))
+            act_copy.setToolTip(t("copy_invite_code_hint"))
+            act_export = menu.addAction(t("export_game"))
+            menu.addSeparator()
+        else:
+            act_copy = act_export = None
+        act_paste = menu.addAction(t("paste_invite_code"))
+        act_paste.setToolTip(t("paste_invite_code_hint"))
+        act_import = menu.addAction(t("import_game"))
+        chosen = menu.exec(self.game_list.mapToGlobal(pos))
+        if chosen is None:
+            return
+        if chosen is act_copy:
+            self._on_export_invite_code()
+        elif chosen is act_export:
+            self._on_export_game()
+        elif chosen is act_paste:
+            self._on_import_invite_code()
+        elif chosen is act_import:
+            self._on_import_game()
 
     def _setup_timer(self):
         """Set up periodic check timer."""
@@ -427,6 +492,7 @@ class MainWindow(QMainWindow):
         if 0 <= row < len(self.games):
             self.current_game = self.games[row]
             self._update_game_view()
+        self._update_share_enabled()
 
     def _update_game_view(self):
         """Update the right panel with current game info."""
@@ -560,13 +626,18 @@ class MainWindow(QMainWindow):
                 )
             return player_name == filter_player
 
+        # Phantom "TO PLAY" row is the incoming save for the player who has
+        # not moved yet. History already stores that same file as the last
+        # upload. Showing it on "All players" while we wait duplicates 0004
+        # as if WE still had to play. Only pin it when it is our turn, or
+        # when the filter is the waiting player (their incoming save is
+        # filed under the previous sender).
         show_pending = bool(
             current
             and incoming
             and (
-                not filter_player
+                current.name == my_game_name
                 or filter_player == current.name
-                or (filter_player == FILTER_MINE and current.name == my_game_name)
             )
         )
 
@@ -645,6 +716,7 @@ class MainWindow(QMainWindow):
         self.history_filter_combo.clear()
         self.history_filter_combo.addItem(t("history_filter_all"), FILTER_ALL)
         self.history_filter_combo.addItem(t("history_filter_mine"), FILTER_MINE)
+        self._update_share_enabled()
 
     def set_health_report(self, report: HealthReport):
         """Update the global PBEM health strip."""
@@ -683,7 +755,10 @@ class MainWindow(QMainWindow):
                     game_name=game.name,
                 ))
         if not report.has_problems:
-            report.issues.append(HealthIssue("ok", "all_ok", t("health_ok"), ""))
+            from src.health_check import healthy_status_text
+            report.issues.append(HealthIssue(
+                "ok", "all_ok", healthy_status_text(self.games, my_name), "",
+            ))
         self.set_health_report(report)
 
     def show_health_dialog(self):
@@ -1217,6 +1292,37 @@ class MainWindow(QMainWindow):
             self.status_label.setText(t("game_saved", name=self.current_game.name))
             self.push_shared_config_requested.emit(self.current_game)
 
+    def _on_edit_queue(self):
+        """Manually assign saves and whose turn it is."""
+        if not self.current_game:
+            QMessageBox.information(self, t("info"), t("select_game_to_export"))
+            return
+        game = self.current_game
+        if (game.admin_password or "").strip():
+            from src.gui.app_controller import AppController
+            pwd, ok = QInputDialog.getText(
+                self,
+                t("admin_password_prompt"),
+                t("admin_password_prompt"),
+                QLineEdit.Password,
+            )
+            if not ok:
+                return
+            if not AppController.verify_admin_password(game, pwd):
+                QMessageBox.warning(self, t("error"), t("wrong_password"))
+                return
+        dialog = EditQueueDialog(self.config, game, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        from src.config import get_games_dir
+        game.save_to_file(get_games_dir(), self.config.master_password)
+        self._update_game_view()
+        self._refresh_game_list()
+        if dialog.publish_to_server():
+            self.queue_publish_requested.emit(game)
+        else:
+            self.status_label.setText(t("queue_saved_local"))
+
     def _on_settings(self):
         """Open settings dialog."""
         dialog = SettingsDialog(self.config, self)
@@ -1231,14 +1337,21 @@ class MainWindow(QMainWindow):
         # Sidebar
         self.lbl_games.setText(t("my_games"))
         self.btn_new_game.setText(t("new_game"))
-        self.btn_import_game.setText(t("import_game"))
-        self.btn_export_game.setText(t("export_game"))
-        self.btn_copy_invite.setText(t("copy_invite_code"))
-        self.btn_copy_invite.setToolTip(t("copy_invite_code_hint"))
-        self.btn_paste_invite.setText(t("paste_invite_code"))
-        self.btn_paste_invite.setToolTip(t("paste_invite_code_hint"))
+        self.game_list.setToolTip(t("game_list_hint"))
+        self.btn_join_game.setText(t("join_game"))
+        self.btn_join_game.setToolTip(t("join_game_hint"))
+        self.btn_share_game.setText(t("share_game"))
+        self.btn_share_game.setToolTip(t("share_game_hint"))
+        self.act_import_file.setText(t("import_game"))
+        self.act_paste_invite.setText(t("paste_invite_code"))
+        self.act_paste_invite.setToolTip(t("paste_invite_code_hint"))
+        self.act_export_file.setText(t("export_game"))
+        self.act_copy_invite.setText(t("copy_invite_code"))
+        self.act_copy_invite.setToolTip(t("copy_invite_code_hint"))
         self.btn_game_transport.setText(t("game_transport"))
         self.btn_edit_game.setText(t("edit_game"))
+        self.btn_edit_queue.setText(t("edit_queue"))
+        self.btn_edit_queue.setToolTip(t("edit_queue_hint"))
         self.btn_stats.setText(t("statistics"))
         self.btn_settings.setText(t("settings"))
         self.btn_danger_zone.setText(t("danger_zone_open"))
@@ -1263,6 +1376,8 @@ class MainWindow(QMainWindow):
         self.history_group.setTitle(t("history_group"))
         self.lbl_filter.setText(t("history_filter"))
         self.btn_revert.setText(t("revert_selected"))
+        self.btn_edit_queue_hist.setText(t("edit_queue"))
+        self.btn_edit_queue_hist.setToolTip(t("edit_queue_hint"))
         self.btn_download_turn.setText(t("history_download_this"))
         self.btn_launch_turn.setText(t("launch_this_turn"))
         self.btn_launch_turn.setVisible(self.config.get("direct_load_global", False))

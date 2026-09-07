@@ -39,34 +39,9 @@ if not exist icon.ico (
 )
 echo.
 
-set "UPX_EXE=%~dp0tools\upx\upx.exe"
 set "USE_UPX=0"
 
-echo [3/5] UPX (kompresja exe, ~30%% mniej)...
-if exist "%UPX_EXE%" (
-    set "USE_UPX=1"
-    set "PATH=%~dp0tools\upx;%PATH%"
-    echo [OK] Lokalny UPX: %UPX_EXE%
-    "%UPX_EXE%" --version
-) else (
-    where upx >nul 2>&1
-    if not errorlevel 1 (
-        set "USE_UPX=1"
-        echo [OK] UPX w systemowym PATH:
-        upx --version
-    ) else (
-        echo [INFO] Brak UPX — pobieram do tools\upx\...
-        powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\install_upx.ps1"
-        if exist "%UPX_EXE%" (
-            set "USE_UPX=1"
-            set "PATH=%~dp0tools\upx;%PATH%"
-            echo [OK] UPX zainstalowany lokalnie.
-            "%UPX_EXE%" --version
-        ) else (
-            echo [UWAGA] Nie udalo sie pobrac UPX — budowanie bez kompresji.
-        )
-    )
-)
+echo [3/5] UPX wylaczony (Windows Smart App Control blokuje spakowane DLL-e Qt)
 echo.
 
 echo [4/5] Budowanie .exe...

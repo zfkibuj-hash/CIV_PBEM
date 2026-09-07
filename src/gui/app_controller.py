@@ -307,15 +307,21 @@ class AppController(QObject):
                     pass
 
     def list_remote_saves(self, game: Game) -> list[str]:
-        """All .CivBeyondSwordSave files on the server for this game (any player)."""
+        """Known save names for this game (listing optional; history is catalog).
+
+        FTP list_files is a stub (NLST hangs on some PCs). Check already
+        filled history via named RETR of turns.json — use that.
+        """
+        listed: list[str] = []
         transport = self._create_transport_for_game(game)
-        if not transport:
-            return []
-        files = transport.list_files(game.name)
-        return [
-            f for f in files
-            if f.endswith(".CivBeyondSwordSave") and game.save_belongs_to_game(f)
-        ]
+        if transport:
+            listed = [
+                f for f in (transport.list_files(game.name) or [])
+                if f.endswith(".CivBeyondSwordSave") and game.save_belongs_to_game(f)
+            ]
+        if listed:
+            return listed
+        return game.history_save_filenames()
 
     def download_save_list(self, game: Game) -> list[str]:
         """Get list of saves available for THIS player (sent by previous player)."""
@@ -368,8 +374,38 @@ class AppController(QObject):
             return False, "Transport nie jest skonfigurowany dla tej gry"
 
         my_name = self.config.player_name
+
+        already = game.already_uploaded_latest(my_name)
+        if already:
+            logger.info("Duplicate upload ignored (already sent): %s", already)
+            return True, t("upload_already_sent", filename=already)
+
+        # Filename seq MUST come from the server, not this PC's stale counter.
+        # Otherwise a second player uploads another 0001_… and the sequence breaks.
+        try:
+            remote_listed = transport.list_files(game.name)
+        except Exception:
+            logger.exception("Could not list remote saves before upload")
+            remote_listed = []
+        remote_saves = [
+            f for f in (remote_listed or [])
+            if str(f).endswith(".CivBeyondSwordSave") and game.save_belongs_to_game(f)
+        ]
+        if game.history and not remote_saves:
+            return False, t("upload_seq_sync_failed")
+
         my_game_name = game.get_game_player_name(my_name)
+        holder = game.turn_holder_from_saves(remote_saves)
+        if holder and my_game_name and holder.casefold() != my_game_name.casefold():
+            return False, t("upload_not_your_turn", name=holder)
+
+        game.ensure_unique_save_seq(remote_saves)
         remote_filename = game.get_save_filename(my_name)
+        safety = 0
+        while safety < 10000 and transport.file_exists(remote_filename, game.name):
+            game.bump_save_seq()
+            remote_filename = game.get_save_filename(my_name)
+            safety += 1
 
         if game.history and game.history[-1].filename == remote_filename:
             logger.info("Duplicate upload ignored: %s", remote_filename)
@@ -409,9 +445,11 @@ class AppController(QObject):
             game.bump_save_seq()
             game.save_to_file(get_games_dir(), self.config.master_password)
 
-            self._upload_game_state_file(game, transport)
-
-            # Upload shared game config if not yet present
+            # Do not re-scan local 0003_…to_me — that snaps the pointer
+            # back to the uploader after we already advanced to the recipient.
+            self._upload_game_state_file(
+                game, transport, repair_from_local_saves=False,
+            )
             config_filename = f"{game.name}.config"
             if not transport.file_exists(config_filename, game.name):
                 self.upload_game_config(game)
@@ -582,8 +620,9 @@ class AppController(QObject):
 
     def apply_state_dict(
         self, game: Game, data: dict, *, emit_signal: bool = True,
+        allow_rewind: bool = False,
     ) -> tuple[bool, str]:
-        """Force-apply history from turns/state JSON dict (manual or remote)."""
+        """Apply history from turns/state JSON. Check must not rewind a newer local game."""
         from src.models.game import Turn
 
         if not isinstance(data, dict):
@@ -603,6 +642,29 @@ class AppController(QObject):
         turns = [Turn.from_dict(x) for x in hist_raw if isinstance(x, dict)]
         if not turns:
             return False, t("load_state_no_history")
+
+        remote_rank = (
+            int(data.get("state_revision") or 0),
+            int(data.get("save_seq") or 0),
+            len(turns),
+        )
+        local_rank = (
+            int(game.state_revision or 0),
+            int(game.save_seq or 0),
+            len(game.history),
+        )
+        if game.history and not allow_rewind and remote_rank < local_rank:
+            game.apply_turns_log(data)
+            latest = game.incoming_save_filename()
+            if latest:
+                game.sync_current_player_from_save(latest)
+            game.save_to_file(get_games_dir(), self.config.master_password)
+            if emit_signal:
+                self.games_updated.emit()
+            who = game.current_player.name if game.current_player else "?"
+            return True, t(
+                "load_state_ok", turn=game.current_turn, player=who, n=len(game.history),
+            )
 
         game.history = turns
         idx = int(data.get("current_player_index", game.current_player_index) or 0)
@@ -636,7 +698,7 @@ class AppController(QObject):
             data = json.loads(path.read_text(encoding="utf-8"))
         except Exception as e:
             return False, t("load_state_bad_json", error=str(e))
-        return self.apply_state_dict(game, data)
+        return self.apply_state_dict(game, data, allow_rewind=True)
 
     def pull_named_remote_file(self, game: Game, remote_filename: str) -> tuple[bool, str]:
         """RETR one known remote file (curl-fast) and apply JSON state if present."""
@@ -907,27 +969,34 @@ class AppController(QObject):
             return True, "reminder_sent"
         return False, "reminder_failed"
 
-    def _upload_game_state_file(self, game: Game, transport: BaseTransport) -> bool:
+    def _upload_game_state_file(
+        self,
+        game: Game,
+        transport: BaseTransport,
+        *,
+        repair_from_local_saves: bool = True,
+    ) -> bool:
         """Upload local game JSON as {GameName}_state.json for other clients."""
         # Prefer turn pointer from any local managed saves so we never re-poison
         # the server with a stale "waiting for Cantrol" while 0001→next exists.
-        try:
-            from src.saves import glob_saves, iter_save_dirs
-            dirs = iter_save_dirs(
-                self.config.save_path,
-                self.config.get("civ4_save_path", ""),
-                self.config.get("mirror_saves", True),
-            )
-            names: list[str] = []
-            for pattern in (
-                f"{game.name}_*.CivBeyondSwordSave",
-                f"*_{game.name}_*.CivBeyondSwordSave",
-            ):
-                names.extend(p.name for p in glob_saves(pattern, dirs, game.name))
-            if names and game.repair_turn_state_from_saves(names):
-                game.save_to_file(get_games_dir(), self.config.master_password)
-        except Exception:
-            logger.debug("pre-upload local save repair failed", exc_info=True)
+        if repair_from_local_saves:
+            try:
+                from src.saves import glob_saves, iter_save_dirs
+                dirs = iter_save_dirs(
+                    self.config.save_path,
+                    self.config.get("civ4_save_path", ""),
+                    self.config.get("mirror_saves", True),
+                )
+                names: list[str] = []
+                for pattern in (
+                    f"{game.name}_*.CivBeyondSwordSave",
+                    f"*_{game.name}_*.CivBeyondSwordSave",
+                ):
+                    names.extend(p.name for p in glob_saves(pattern, dirs, game.name))
+                if names and game.repair_turn_state_from_saves(names):
+                    game.save_to_file(get_games_dir(), self.config.master_password)
+            except Exception:
+                logger.debug("pre-upload local save repair failed", exc_info=True)
 
         # Never publish a blank import (empty history) — that wiped the server
         # for everyone after a second-PC import + "upload settings".
@@ -946,6 +1015,22 @@ class AppController(QObject):
         )
         ok_turns = self._upload_turns_log(game, transport)
         return bool(ok_state or ok_turns)
+
+    def publish_turn_state(
+        self, game: Game, *, repair_from_local_saves: bool = True,
+    ) -> tuple[bool, str]:
+        """Upload turns.json + state.json. Queue editor must pass repair=False."""
+        game.save_to_file(get_games_dir(), self.config.master_password)
+        transport = self._create_transport_for_game(game)
+        if not transport:
+            return False, t("import_sync_no_transport")
+        ok = self._upload_game_state_file(
+            game, transport, repair_from_local_saves=repair_from_local_saves,
+        )
+        self.games_updated.emit()
+        if ok:
+            return True, t("queue_published")
+        return False, t("queue_publish_failed")
 
     def _upload_turns_log(self, game: Game, transport: BaseTransport) -> bool:
         """Publish `{game}_turns.json` — the portable turn log for other PCs."""

@@ -24,12 +24,32 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "+ New Game",
     },
     "import_game": {
-        "pl": "Importuj gre...",
-        "en": "Import game...",
+        "pl": "Importuj plik .civ4pbem...",
+        "en": "Import .civ4pbem file...",
     },
     "export_game": {
-        "pl": "Eksportuj gre...",
-        "en": "Export game...",
+        "pl": "Eksportuj plik .civ4pbem...",
+        "en": "Export .civ4pbem file...",
+    },
+    "join_game": {
+        "pl": "Dolacz do gry",
+        "en": "Join game",
+    },
+    "join_game_hint": {
+        "pl": "Import pliku .civ4pbem albo wklejenie kodu zaproszenia.",
+        "en": "Import a .civ4pbem file or paste an invite code.",
+    },
+    "share_game": {
+        "pl": "Udostepnij gre",
+        "en": "Share game",
+    },
+    "share_game_hint": {
+        "pl": "Eksport pliku .civ4pbem albo skopiowanie kodu zaproszenia (Discord).",
+        "en": "Export a .civ4pbem file or copy an invite code (Discord).",
+    },
+    "game_list_hint": {
+        "pl": "Prawy przycisk myszy: kod zaproszenia, import i eksport.",
+        "en": "Right-click: invite code, import and export.",
     },
     "copy_invite_code": {
         "pl": "Kopiuj kod zaproszenia",
@@ -74,6 +94,160 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "edit_game": {
         "pl": "Edytuj gre...",
         "en": "Edit game...",
+    },
+    "edit_queue": {
+        "pl": "Kolejka i save'y...",
+        "en": "Queue and saves...",
+    },
+    "edit_queue_title": {
+        "pl": "Kolejka: {name}",
+        "en": "Queue: {name}",
+    },
+    "edit_queue_hint": {
+        "pl": "Recznie ustaw kto po kim gra i ktory plik jest ktorym w kolejce. "
+              "Ostatni save w tabeli to plik do zaladowania. "
+              "Usun duchy (zle nazwy), przestaw wiersze, wskaz kto czeka.",
+        "en": "Manually set player order and which save file is which slot. "
+              "The last row is the file to load. "
+              "Delete ghost names, reorder rows, pick who is waiting.",
+    },
+    "edit_queue_order": {
+        "pl": "Kolejnosc graczy",
+        "en": "Player order",
+    },
+    "edit_queue_pointer": {
+        "pl": "Czyj ruch",
+        "en": "Whose turn",
+    },
+    "edit_queue_waiting": {
+        "pl": "Czeka:",
+        "en": "Waiting for:",
+    },
+    "edit_queue_turn": {
+        "pl": "Numer tury (UI):",
+        "en": "Turn number (UI):",
+    },
+    "edit_queue_next_seq": {
+        "pl": "Nastepny upload (seq):",
+        "en": "Next upload (seq):",
+    },
+    "edit_queue_sync_wait": {
+        "pl": "Czeka = odbiorca ostatniego save'a",
+        "en": "Waiting for = recipient of the last save",
+    },
+    "edit_queue_saves": {
+        "pl": "Save'y w kolejce",
+        "en": "Saves in the queue",
+    },
+    "edit_queue_saves_hint": {
+        "pl": "Kazdy wiersz = jeden plik na serwerze. Seq / From / To / Turn musza "
+              "pasowac do nazwy (albo kliknij Przebuduj nazwe). "
+              "Ten wiersz jest biezacy = przenosi save na koniec i ustawia kto czeka.",
+        "en": "Each row is one server file. Seq / From / To / Turn should match "
+              "the filename (or click Rebuild name). "
+              "Set as current moves that save to the end and sets who is waiting.",
+    },
+    "edit_queue_col_seq": {
+        "pl": "Seq",
+        "en": "Seq",
+    },
+    "edit_queue_col_turn": {
+        "pl": "Tura",
+        "en": "Turn",
+    },
+    "edit_queue_col_from": {
+        "pl": "Od",
+        "en": "From",
+    },
+    "edit_queue_col_to": {
+        "pl": "Do",
+        "en": "To",
+    },
+    "edit_queue_col_file": {
+        "pl": "Plik",
+        "en": "File",
+    },
+    "edit_queue_add": {
+        "pl": "Dodaj",
+        "en": "Add",
+    },
+    "edit_queue_remove": {
+        "pl": "Usun wiersz",
+        "en": "Remove row",
+    },
+    "edit_queue_up": {
+        "pl": "W gore",
+        "en": "Up",
+    },
+    "edit_queue_down": {
+        "pl": "W dol",
+        "en": "Down",
+    },
+    "edit_queue_pick": {
+        "pl": "Wskaz plik...",
+        "en": "Pick file...",
+    },
+    "edit_queue_rebuild": {
+        "pl": "Przebuduj nazwe",
+        "en": "Rebuild name",
+    },
+    "edit_queue_set_current": {
+        "pl": "Ten wiersz jest biezacy",
+        "en": "This row is current",
+    },
+    "edit_queue_publish": {
+        "pl": "Wyslij poprawke na FTP (turns.json + state.json) — zeby inni tez to zobaczyli",
+        "en": "Publish fix to FTP (turns.json + state.json) so everyone else sees it",
+    },
+    "edit_queue_confirm": {
+        "pl": "Zapisac kolejke?\n\nCzeka: {player}\nTura: {turn}\nNastepny seq: {seq}\n"
+              "Save'ow: {n}\nBiezacy plik:\n{filename}",
+        "en": "Save this queue?\n\nWaiting: {player}\nTurn: {turn}\nNext seq: {seq}\n"
+              "Saves: {n}\nCurrent file:\n{filename}",
+    },
+    "queue_published": {
+        "pl": "Kolejka zapisana i wyslana na serwer.",
+        "en": "Queue saved and published to the server.",
+    },
+    "queue_saved_local": {
+        "pl": "Kolejka zapisana lokalnie (bez FTP).",
+        "en": "Queue saved locally (not published).",
+    },
+    "queue_publish_failed": {
+        "pl": "Kolejka zapisana lokalnie, ale wysylka na FTP nie wyszla. Sprobuj ponownie.",
+        "en": "Queue saved locally, but FTP publish failed. Try again.",
+    },
+    "queue_err_no_players": {
+        "pl": "Brak graczy w kolejce.",
+        "en": "No players in the queue.",
+    },
+    "queue_err_player_count": {
+        "pl": "Kolejnosc musi zawierac wszystkich graczy z gry (nikogo nie dodawaj i nie usuwaj).",
+        "en": "Order must include every player in the game (do not add or drop anyone).",
+    },
+    "queue_err_unknown_player": {
+        "pl": "Nieznany gracz w kolejce.",
+        "en": "Unknown player in the queue.",
+    },
+    "queue_err_dup_player": {
+        "pl": "Ten sam gracz jest w kolejce dwa razy.",
+        "en": "The same player appears twice in the queue.",
+    },
+    "queue_err_empty_file": {
+        "pl": "Jakis wiersz nie ma nazwy pliku.",
+        "en": "A row is missing a filename.",
+    },
+    "queue_err_dup_file": {
+        "pl": "Ten sam plik jest w tabeli dwa razy. Usun duplikat.",
+        "en": "The same file is listed twice. Remove the duplicate.",
+    },
+    "queue_err_no_saves": {
+        "pl": "Dodaj przynajmniej jeden save (wiersz w tabeli).",
+        "en": "Add at least one save (a row in the table).",
+    },
+    "queue_err_waiting": {
+        "pl": "Wybierz kto teraz czeka.",
+        "en": "Pick who is waiting now.",
     },
     "edit_game_title": {
         "pl": "Edycja gry: {name}",
@@ -218,6 +392,14 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "upload_not_this_game": {
         "pl": "Ten plik nie nalezy do wybranej gry.",
         "en": "This file does not belong to the selected game.",
+    },
+    "upload_already_sent": {
+        "pl": "Ten ruch jest juz na serwerze ({filename}). Nie wysylam drugi raz.",
+        "en": "This move is already on the server ({filename}). Not uploading again.",
+    },
+    "upload_seq_sync_failed": {
+        "pl": "Nie udalo sie odczytac listy save'ow z serwera. Kliknij Sprawdz teraz i sprobuj ponownie — inaczej numer pliku sie powtorzy.",
+        "en": "Could not list saves on the server. Click Check now and retry — otherwise the save number may collide.",
     },
     "upload_no_next_player": {
         "pl": "Brak nastepnego gracza w kolejce.",
@@ -1659,8 +1841,16 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Cancel",
     },
     "health_ok": {
-        "pl": "Wszystko gotowe — mozesz grac",
-        "en": "All good — you can play",
+        "pl": "Wszystko gotowe",
+        "en": "All good",
+    },
+    "health_ok_your_turn": {
+        "pl": "Wszystko gotowe — twoja tura",
+        "en": "All good — your turn",
+    },
+    "health_ok_waiting": {
+        "pl": "Wszystko gotowe — czeka: {player}",
+        "en": "All good — waiting for {player}",
     },
     "health_not_synced": {
         "pl": "{game}: brak synchronizacji z serwerem (pusta historia)",

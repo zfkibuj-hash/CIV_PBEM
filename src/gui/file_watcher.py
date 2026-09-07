@@ -66,9 +66,12 @@ class _SaveFileHandler(FileSystemEventHandler):
                     return
 
             now = time.time()
-            if self._seen_until.get(path, 0) > now:
+            # Debounce by filename, not full path: OneDrive/mirror copies of the
+            # same Civ4 save live in two folders and would each start an upload.
+            name_key = Path(path).name.lower()
+            if self._seen_until.get(name_key, 0) > now:
                 return
-            self._seen_until[path] = now + 5
+            self._seen_until[name_key] = now + 30
 
         self._callback(path)
 

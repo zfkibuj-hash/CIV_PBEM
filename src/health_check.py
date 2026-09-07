@@ -16,6 +16,26 @@ if TYPE_CHECKING:
 _LEVEL_RANK = {"ok": 0, "info": 1, "warn": 2, "error": 3}
 
 
+def healthy_status_text(games: list["Game"], my_name: str) -> str:
+  """OK-strip text: whose turn it is, not a generic 'you can play'."""
+  mine = [g for g in games if g.history and g.is_my_turn(my_name)]
+  if mine:
+    return t("health_ok_your_turn")
+  waiting: list[str] = []
+  seen: set[str] = set()
+  for game in games:
+    if not game.history or game.is_finished or not game.current_player:
+      continue
+    who = game.current_player.name
+    fold = who.casefold()
+    if fold not in seen:
+      seen.add(fold)
+      waiting.append(who)
+  if waiting:
+    return t("health_ok_waiting", player=", ".join(waiting))
+  return t("health_ok")
+
+
 @dataclass
 class HealthIssue:
   level: str  # ok | info | warn | error
@@ -41,6 +61,9 @@ class HealthReport:
 
   def summary(self) -> str:
     if self.worst_level == "ok":
+      for issue in self.issues:
+        if issue.level == "ok" and issue.message:
+          return issue.message
       return t("health_ok")
     errors = [i for i in self.issues if i.level == "error"]
     warns = [i for i in self.issues if i.level == "warn"]
@@ -107,7 +130,9 @@ def run_health_check(
       ))
 
   if not report.has_problems:
-    report.issues.insert(0, HealthIssue("ok", "all_ok", t("health_ok"), ""))
+    report.issues.insert(0, HealthIssue(
+      "ok", "all_ok", healthy_status_text(games, my_name), "",
+    ))
 
   report.issues.sort(key=lambda i: _LEVEL_RANK.get(i.level, 0), reverse=True)
   return report

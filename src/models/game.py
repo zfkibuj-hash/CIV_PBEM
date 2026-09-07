@@ -403,6 +403,119 @@ class Game:
     def bump_revision(self):
         self.state_revision = int(self.state_revision or 0) + 1
 
+    def managed_save_filename(
+        self,
+        seq: int,
+        turn: int,
+        sender: str,
+        recipient: str,
+    ) -> str:
+        """Build `{seq}_{Game}_T####_from_X_to_Y.CivBeyondSwordSave`."""
+        def _canon(name: str) -> str:
+            idx = self.get_player_index(name)
+            if idx is not None:
+                return self.players[idx].name
+            return (name or "unknown").strip() or "unknown"
+
+        sender = _canon(sender)
+        recipient = _canon(recipient)
+        seq_i = max(0, int(seq))
+        turn_i = max(0, int(turn))
+        return (
+            f"{seq_i:04d}_{self.name}_T{turn_i:04d}"
+            f"_from_{sender}_to_{recipient}.CivBeyondSwordSave"
+        )
+
+    def slot_from_save_filename(
+        self, filename: str, timestamp: float = 0.0,
+    ) -> dict:
+        """Parse a managed save name into queue-editor fields."""
+        name = Path(filename).name
+        seq = self.parse_save_seq(name)
+        turn, sender, recipient = self.parse_save_filename(name)
+        return {
+            "filename": name,
+            "seq": int(seq) if seq is not None else 0,
+            "turn_number": int(turn) if turn is not None else 0,
+            "from_name": sender or "",
+            "to_name": recipient or "",
+            "timestamp": float(timestamp or 0.0),
+        }
+
+    def apply_manual_queue(
+        self,
+        player_names: list[str],
+        slots: list[dict],
+        waiting_for: str,
+        current_turn: int,
+        save_seq: int,
+    ) -> str:
+        """Replace turn order + history from the queue editor. Empty = ok."""
+        names = [n.strip() for n in player_names if (n or "").strip()]
+        if not names:
+            return "queue_err_no_players"
+        if len(names) != len(self.players):
+            return "queue_err_player_count"
+        existing = {p.name.casefold(): p for p in self.players}
+        seen: set[str] = set()
+        new_players: list[Player] = []
+        for i, name in enumerate(names):
+            player = existing.get(name.casefold())
+            if player is None:
+                return "queue_err_unknown_player"
+            fold = player.name.casefold()
+            if fold in seen:
+                return "queue_err_dup_player"
+            seen.add(fold)
+            player.order = i
+            new_players.append(player)
+        self.players = new_players
+
+        history: list[Turn] = []
+        known_fn: set[str] = set()
+        old_ts = {t.filename: t.timestamp for t in self.history if t.filename}
+        for slot in slots or []:
+            fn = Path(str(slot.get("filename") or "")).name.strip()
+            if not fn:
+                return "queue_err_empty_file"
+            if fn in known_fn:
+                return "queue_err_dup_file"
+            known_fn.add(fn)
+            sender = (slot.get("from_name") or "").strip()
+            if not sender:
+                _turn, sender, _to = self.parse_save_filename(fn)
+                sender = sender or "?"
+            try:
+                turn_n = int(slot.get("turn_number") or 0)
+            except (TypeError, ValueError):
+                turn_n = 0
+            ts = slot.get("timestamp")
+            try:
+                ts_f = float(ts) if ts else 0.0
+            except (TypeError, ValueError):
+                ts_f = 0.0
+            if ts_f <= 0:
+                ts_f = float(old_ts.get(fn) or time.time())
+            history.append(Turn(
+                turn_number=turn_n,
+                player_name=sender,
+                timestamp=ts_f,
+                filename=fn,
+            ))
+        if not history:
+            return "queue_err_no_saves"
+
+        wait = (waiting_for or "").strip()
+        idx = self.get_player_index(wait)
+        if idx is None:
+            return "queue_err_waiting"
+        self.history = history
+        self.current_player_index = idx
+        self.current_turn = max(0, int(current_turn))
+        self.save_seq = max(0, int(save_seq))
+        self.state_revision = int(self.state_revision or 0) + 5
+        return ""
+
     def revert_to_turn(self, history_index: int) -> Optional["Turn"]:
         """Revert game state to a specific point in history.
 
@@ -514,15 +627,90 @@ class Game:
             self.maybe_declare_winner()
         return True
 
+    def history_save_filenames(self) -> list[str]:
+        """Unique managed save names from history (Check/turns.json catalog)."""
+        seen: list[str] = []
+        known: set[str] = set()
+        for turn in self.history:
+            name = (turn.filename or "").strip()
+            if (
+                name
+                and name.endswith(".CivBeyondSwordSave")
+                and self.save_belongs_to_game(name)
+                and name not in known
+            ):
+                seen.append(name)
+                known.add(name)
+        return seen
+
     def incoming_save_filename(self) -> Optional[str]:
         """Save the current player should load (uploaded by the previous player).
 
         History records who already played. The file for the player who has
-        not played yet is the last uploaded save — not an entry under their name.
+        not played yet is the newest uploaded save (seq, then turn) — not
+        necessarily history[-1] if local order got scrambled.
         """
+        names = self.history_save_filenames()
+        latest = self.latest_managed_save(names)
+        if latest:
+            return latest
         if not self.history:
             return None
         return self.history[-1].filename or None
+
+    @staticmethod
+    def payload_state_rank(data: dict) -> tuple[int, int, int]:
+        """(revision, save_seq, history_len) — higher tuple wins."""
+        if not isinstance(data, dict):
+            return (0, 0, 0)
+        src = data
+        if not data.get("history") and isinstance(data.get("game"), dict):
+            src = data["game"]
+        hist = src.get("history") or data.get("history") or []
+        n = len(hist) if isinstance(hist, list) else 0
+        rev = int(data.get("state_revision") or src.get("state_revision") or 0)
+        seq = int(data.get("save_seq") or src.get("save_seq") or 0)
+        return (rev, seq, n)
+
+    @staticmethod
+    def waiting_player_from_payload(data: dict) -> str:
+        """Who should play, from latest save name — not a stale waiting_for field."""
+        if not isinstance(data, dict):
+            return "?"
+        src = data
+        if not data.get("history") and isinstance(data.get("game"), dict):
+            src = data["game"]
+        hist = src.get("history") or data.get("history") or []
+        names: list[str] = []
+        for row in hist:
+            if isinstance(row, dict) and row.get("filename"):
+                names.append(str(row["filename"]))
+        best_fn = None
+        best_key = (-1, -1, "")
+        for fn in names:
+            seq = Game.parse_save_seq(fn)
+            turn, _sender, recipient = Game.parse_save_filename(fn)
+            key = (seq if seq is not None else -1, turn if turn is not None else -1, fn)
+            if key > best_key:
+                best_key = key
+                best_fn = fn
+        if best_fn:
+            _t, _s, recipient = Game.parse_save_filename(best_fn)
+            if recipient:
+                return recipient
+        waiting = (data.get("waiting_for") or src.get("waiting_for") or "").strip()
+        if waiting:
+            return waiting
+        players = src.get("players") or data.get("players") or []
+        try:
+            idx = int(data.get("current_player_index") or src.get("current_player_index") or 0)
+        except (TypeError, ValueError):
+            idx = 0
+        if isinstance(players, list) and 0 <= idx < len(players):
+            p = players[idx]
+            if isinstance(p, dict) and p.get("name"):
+                return str(p["name"])
+        return (data.get("winner") or "?") or "?"
 
     @staticmethod
     def parse_save_seq(filename: str) -> Optional[int]:
@@ -679,24 +867,63 @@ class Game:
             f"_from_{sender}_to_{recipient}.CivBeyondSwordSave"
         )
 
+    def already_uploaded_latest(self, local_player_name: str) -> Optional[str]:
+        """If the newest managed save was already sent by this player, return it.
+
+        Stops the same Civ4 file being STOR'd as 0005, then 0006, then 0007
+        when the turn pointer snaps back or the watcher fires twice.
+        """
+        my = self.get_game_player_name(local_player_name)
+        latest = self.incoming_save_filename()
+        if not my or not latest:
+            return None
+        _turn, sender, _recipient = self.parse_save_filename(latest)
+        if sender and sender.casefold() == my.casefold():
+            return latest
+        return None
+
     def bump_save_seq(self):
         """Advance monotonic save counter after a successful upload."""
         self.save_seq = int(self.save_seq or 0) + 1
 
-    def sync_save_seq_from_filenames(self, filenames: list[str]) -> bool:
-        """Raise save_seq above any remote/local managed save sequence."""
-        max_seq = -1
+    def used_save_seqs(self, filenames: list[str]) -> set[int]:
+        """Sequence numbers already taken by managed saves (any from/to suffix)."""
+        used: set[int] = set()
         for raw in filenames or []:
             if not self.save_belongs_to_game(raw):
                 continue
             seq = self.parse_save_seq(raw)
             if seq is not None:
-                max_seq = max(max_seq, seq)
-        next_seq = max_seq + 1
-        if next_seq > int(self.save_seq or 0):
-            self.save_seq = next_seq
-            return True
-        return False
+                used.add(seq)
+        return used
+
+    def ensure_unique_save_seq(self, filenames: list[str]) -> int:
+        """Pick the next unused seq from the server listing — never reuse 0001_.
+
+        Local save_seq is stale on every other PC. Naming an upload from it
+        produces a second 0001_… file. Always take max(remote)+1, then skip
+        any number still occupied.
+        """
+        used = self.used_save_seqs(filenames)
+        next_seq = (max(used) + 1) if used else 0
+        seq = max(int(self.save_seq or 0), next_seq)
+        while seq in used:
+            seq += 1
+        self.save_seq = seq
+        return seq
+
+    def sync_save_seq_from_filenames(self, filenames: list[str]) -> bool:
+        """Raise save_seq above any remote/local managed save sequence."""
+        before = int(self.save_seq or 0)
+        self.ensure_unique_save_seq(filenames)
+        return int(self.save_seq or 0) > before
+
+    def turn_holder_from_saves(self, filenames: list[str]) -> Optional[str]:
+        """Who should play next according to the newest managed save on FTP."""
+        latest = self.latest_managed_save(filenames)
+        if not latest:
+            return None
+        return self.recipient_from_save(latest)
 
     def recipient_from_save(self, filename: str) -> Optional[str]:
         """Player who should load this save (from managed filename)."""
@@ -823,11 +1050,17 @@ class Game:
         return changed
 
     def repair_turn_state_from_saves(self, remote_filenames: list[str]) -> bool:
-        """Fix history + turn pointer from remote managed saves (source of truth)."""
+        """Fix history + turn pointer from managed save names (source of truth).
+
+        Incomplete local folders must not win: if history already has 0004
+        and the disk only still has 0003, keep 0004 as the current save.
+        """
         changed = self.sync_save_seq_from_filenames(remote_filenames)
         if self.merge_history_from_remote_saves(remote_filenames):
             changed = True
-        latest = self.latest_managed_save(remote_filenames)
+        pooled = list(remote_filenames or [])
+        pooled.extend(self.history_save_filenames())
+        latest = self.latest_managed_save(pooled)
         if not latest:
             latest = self.incoming_save_filename()
         if not latest:
@@ -958,13 +1191,12 @@ class Game:
                 )
             self.history.sort(key=_sk)
 
-        # Adopt turn pointer when remote is ahead (or local was blank)
+        # Adopt pointer only when remote is strictly ahead. A shorter/stale
+        # turns.json (waiting_for still Mihau, history stopping at 0003)
+        # must not rewind a local game that already has 0004.
         adopt_pointer = (
-            not self.history
-            or remote_rev > local_rev
-            or remote_seq > local_seq
-            or len(remote_history) >= len(self.history)
-        )
+            local_rev == 0 and local_seq == 0 and len(self.history) <= len(remote_history)
+        ) or remote_rev > local_rev or remote_seq > local_seq
         if adopt_pointer:
             idx = int(data.get("current_player_index", self.current_player_index) or 0)
             if 0 <= idx < len(self.players) and idx != self.current_player_index:

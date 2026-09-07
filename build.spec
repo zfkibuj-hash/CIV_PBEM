@@ -151,7 +151,9 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX-packed Qt/PySide DLLs get blocked by Windows Smart App Control /
+    # Application Control ("nie mozemy potwierdzic kto opublikowal ...dll").
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
