@@ -104,6 +104,21 @@ class LatestSaveSeqTests(unittest.TestCase):
             "0003_Kuzyny_T0003_from_Mihau_to_Cantrol.CivBeyondSwordSave",
         )
 
+    def test_ensure_unique_from_history_names_next_after_0007(self):
+        game = _game()
+        game.current_turn = 2
+        game.save_seq = 0
+        names = [
+            "0005_Kuzyny_T0001_from_Cantrol_to_SzyMen.CivBeyondSwordSave",
+            "0006_Kuzyny_T0001_from_SzyMen_to_OtaSkyworker.CivBeyondSwordSave",
+            "0007_Kuzyny_T0001_from_OtaSkyworker_to_Mihau.CivBeyondSwordSave",
+        ]
+        self.assertEqual(game.ensure_unique_save_seq(names), 8)
+        self.assertEqual(
+            game.get_save_filename("Mihau"),
+            "0008_Kuzyny_T0002_from_Mihau_to_Cantrol.CivBeyondSwordSave",
+        )
+
     def test_repair_prefers_highest_seq(self):
         game = _game()
         game.current_turn = 0

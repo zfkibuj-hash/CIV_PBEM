@@ -284,7 +284,8 @@ class FTPTransport(BaseTransport):
             return False
 
     def file_exists(self, remote_filename: str, game_name: str) -> bool:
-        return False
+        """Named RETR (no NLST). True if the file can be fetched."""
+        return self.retr_bytes(remote_filename, game_name) is not None
 
     def delete(self, remote_filename: str, game_name: str) -> bool:
         self.last_error = "delete via curl not implemented"

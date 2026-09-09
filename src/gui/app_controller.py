@@ -380,8 +380,9 @@ class AppController(QObject):
             logger.info("Duplicate upload ignored (already sent): %s", already)
             return True, t("upload_already_sent", filename=already)
 
-        # Filename seq MUST come from the server, not this PC's stale counter.
-        # Otherwise a second player uploads another 0001_… and the sequence breaks.
+        # Seq from FTP listing when it works; otherwise from Check history.
+        # NLST is disabled (hangs) so listing is usually empty — that is not
+        # "server unreachable", it is the normal path on this FTP.
         try:
             remote_listed = transport.list_files(game.name)
         except Exception:
@@ -391,7 +392,9 @@ class AppController(QObject):
             f for f in (remote_listed or [])
             if str(f).endswith(".CivBeyondSwordSave") and game.save_belongs_to_game(f)
         ]
-        if game.history and not remote_saves:
+        if not remote_saves:
+            remote_saves = game.history_save_filenames()
+        if not remote_saves:
             return False, t("upload_seq_sync_failed")
 
         my_game_name = game.get_game_player_name(my_name)

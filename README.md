@@ -1,4 +1,4 @@
-# Civ4 PBEM Manager v5.0.5
+# Civ4 PBEM Manager v5.0.6
 
 <p align="center">
   <img src="icon_preview.png" alt="Civ4 PBEM Manager" width="512"/>
@@ -130,6 +130,12 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 
 ## Changelog
 
+### v5.0.6
+
+**Upload without FTP listing**
+- Upload no longer requires a live FTP file list (that listing is disabled because it hangs on some PCs)
+- The next save number is taken from turn history after Check; existing files are skipped if already on the server
+
 ### v5.0.5
 
 **Queue repair and FTP sync**
@@ -260,6 +266,11 @@ Aplikacja jest **koordynatorem**, nie klientem gry.
 3. Nowa gra → dodaj graczy → wybierz prędkość → skonfiguruj transport
 4. Eksportuj `.civ4pbem` **albo skopiuj kod zaproszenia** i wyślij innym graczom
 5. Graj turę → watchdog automatycznie wyśle save i powiadomi następnego gracza
+
+### Co nowego w v5.0.6
+
+- Upload nie wymaga listy plikow z FTP (ta lista wisi na czesci PC)
+- Numer nastepnego save'a bierze sie z historii tur po Check; jesli plik juz jest na serwerze, numer sie podbija
 
 ### Co nowego w v5.0.5
 

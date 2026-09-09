@@ -20,7 +20,7 @@ from src.crypto import encrypt_data, decrypt_data, hash_password_check
 logger = logging.getLogger(__name__)
 
 APP_NAME = "Civ4PBEMManager"
-APP_VERSION = "5.0.5"
+APP_VERSION = "5.0.6"
 
 
 def version_label() -> str:

@@ -4,7 +4,9 @@ __pycache__/
 venv/
 tools/upx/
 dist/
+dist_v*/
 build/
+build_v*/
 *.spec.bak
 .env
 saves/
