@@ -1,4 +1,4 @@
-# Civ4 PBEM Manager v5.0.6
+# Civ4 PBEM Manager v5.0.13
 
 <p align="center">
   <img src="icon_preview.png" alt="Civ4 PBEM Manager" width="512"/>
@@ -48,6 +48,7 @@ It was built entirely by AI (Claude / Kiro) as pure vibecoding for fun. The huma
 - **Polish / English UI**: runtime language switching, no restart needed
 - **Dark / Light theme**: because some of us play at night
 - **Tray badge**: persistent reminder when someone is waiting on your turn
+- **Auto-update**: checks GitHub Releases on startup (built `.exe`), downloads and installs newer versions
 
 ---
 
@@ -68,9 +69,9 @@ This is important. The app is a **coordinator**, not a game client.
 
 ## Download
 
-**Windows .exe** is available in [Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases) -- no Python installation needed.
+**Windows .exe** is available in [Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases/latest) — no Python installation needed.
 
-Just download `Civ4PBEMManager.exe` and run it.
+Download `Civ4PBEMManager.exe` from the latest release and run it. From **v5.0.13** onward the app can self-update when a newer release appears (Settings → Updates).
 
 1. Run the app → **Settings → General**
 2. Set your player name, email, save folder path
@@ -125,10 +126,29 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 | Statistics | Per-player times, averages |
 | Calendar | In-game year display |
 | Reminders | Manual + auto after X days; tray badge |
+| Updates | GitHub Releases check + self-install (`.exe`) |
 
 ---
 
 ## Changelog
+
+### v5.0.13
+
+**Auto-update**
+- On startup (frozen `.exe` only) checks [GitHub Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases) for a newer version
+- Dialog: download & install / skip this version / open in browser
+- Clears Windows Mark-of-the-Web after download, replaces the running exe, restarts
+- Settings: enable/disable + **Check now**
+- Install **5.0.13 once by hand** if you are still on 5.0.12 (older builds have no updater)
+
+### v5.0.12
+
+**Safer uploads (mid-turn saves)**
+- Native Civ4 saves are validated against **leader** names in `_to_` (e.g. `Alexander`), not only PBEM nicks
+- A save that is still your turn cannot be renamed as the next player's file
+- Next player needs a `civ4_leader` mapping in Edit Game
+
+Also includes queue rebuild / revert backup / FTP listing fixes from 5.0.7–5.0.11.
 
 ### v5.0.6
 
@@ -266,6 +286,17 @@ Aplikacja jest **koordynatorem**, nie klientem gry.
 3. Nowa gra → dodaj graczy → wybierz prędkość → skonfiguruj transport
 4. Eksportuj `.civ4pbem` **albo skopiuj kod zaproszenia** i wyślij innym graczom
 5. Graj turę → watchdog automatycznie wyśle save i powiadomi następnego gracza
+
+### Co nowego w v5.0.13
+
+- **Auto-aktualizacja** z GitHub Releases (tylko zbudowany `.exe`)
+- Dialog: pobierz i zainstaluj / nie teraz / otworz w przegladarce
+- Ustawienia → Aktualizacje; raz zainstaluj 5.0.13 recznie, jesli masz jeszcze 5.0.12
+
+### Co nowego w v5.0.12
+
+- Upload sprawdza lidera Civ4 w nazwie `_to_` — nie przepuszcza save'a sprzed End Turn
+- W Edytuj gre ustaw liderow (Alexander / Frederick / …)
 
 ### Co nowego w v5.0.6
 
