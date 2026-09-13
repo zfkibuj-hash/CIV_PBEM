@@ -1389,6 +1389,9 @@ def main():
 
         _run_health_async(check_remote=False, alert=True)
 
+        if config.get("auto_update_check", True):
+            QTimer.singleShot(2500, lambda: window.check_for_updates(manual=False))
+
     from PySide6.QtCore import QTimer
     if wizard_post_action == "import":
         QTimer.singleShot(0, window._on_import_game)

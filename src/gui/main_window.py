@@ -28,6 +28,7 @@ from src.gui.dialogs import (
     GameStatsDialog, EditGameDialog, DangerZoneDialog, EditQueueDialog,
 )
 from src.gui.dialogs.health_dialog import HealthDialog
+from src.gui.update_flow import UpdateFlow
 from src.health_check import HealthReport
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ class MainWindow(QMainWindow):
         self._minimize_to_tray = False  # Set to True by main.py when tray is available
         self._tray_icon = None  # Reference to TrayIcon, set by main.py
         self._health_report: Optional[HealthReport] = None
+        self._update_flow = UpdateFlow(self, config)
 
         self.setWindowTitle(f"Civ4 PBEM Manager {version_label()}")
         self.setMinimumSize(800, 600)
@@ -68,6 +70,10 @@ class MainWindow(QMainWindow):
         self._init_ui()
         self._load_games()
         self._setup_timer()
+
+    def check_for_updates(self, *, manual: bool = False) -> None:
+        """Run GitHub release check (startup or Settings → Check now)."""
+        self._update_flow.start_check(manual=manual)
 
     def apply_theme(self):
         """Apply dark or light theme based on config."""
@@ -1315,6 +1321,9 @@ class MainWindow(QMainWindow):
     def _on_settings(self):
         """Open settings dialog."""
         dialog = SettingsDialog(self.config, self)
+        dialog.check_updates_requested.connect(
+            lambda: self.check_for_updates(manual=True),
+        )
         if dialog.exec() == QDialog.Accepted:
             self.apply_theme()
             # Refresh UI labels for new language

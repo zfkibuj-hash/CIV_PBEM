@@ -726,6 +726,68 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Nie udalo sie ustawic autostartu: {msg}",
         "en": "Failed to set autostart: {msg}",
     },
+    "auto_update_check": {
+        "pl": "Sprawdzaj aktualizacje przy starcie",
+        "en": "Check for updates on startup",
+    },
+    "auto_update_check_now": {
+        "pl": "Sprawdz teraz",
+        "en": "Check now",
+    },
+    "auto_update_group": {
+        "pl": "Aktualizacje",
+        "en": "Updates",
+    },
+    "auto_update_available_title": {
+        "pl": "Dostepna aktualizacja",
+        "en": "Update available",
+    },
+    "auto_update_available_text": {
+        "pl": "Zainstalowana: {local}\nNowa: {remote}\n\n{notes}\n\n"
+              "Pobrac i zainstalowac teraz?\n"
+              "Manager sciaga plik sam i zdejmuje znacznik 'z internetu' (SmartScreen).\n"
+              "Jesli Smart App Control nadal blokuje — tryb Evaluation albo kopiuj z USB.",
+        "en": "Installed: {local}\nNew: {remote}\n\n{notes}\n\n"
+              "Download and install now?\n"
+              "The Manager downloads the file itself and clears the 'from the Internet' mark (SmartScreen).\n"
+              "If Smart App Control still blocks it — Evaluation mode or copy via USB.",
+    },
+    "auto_update_download": {
+        "pl": "Pobierz i zainstaluj",
+        "en": "Download and install",
+    },
+    "auto_update_skip": {
+        "pl": "Nie teraz",
+        "en": "Not now",
+    },
+    "auto_update_open_browser": {
+        "pl": "Otworz w przegladarce",
+        "en": "Open in browser",
+    },
+    "auto_update_downloading": {
+        "pl": "Pobieranie aktualizacji…",
+        "en": "Downloading update…",
+    },
+    "auto_update_restarting": {
+        "pl": "Instalacja — aplikacja uruchomi sie ponownie.",
+        "en": "Installing — the app will restart.",
+    },
+    "auto_update_up_to_date": {
+        "pl": "Masz najnowsza wersje ({version}).",
+        "en": "You already have the latest version ({version}).",
+    },
+    "auto_update_failed": {
+        "pl": "Nie udalo sie sprawdzic aktualizacji:\n{error}",
+        "en": "Could not check for updates:\n{error}",
+    },
+    "auto_update_download_failed": {
+        "pl": "Pobieranie nie powiodlo sie:\n{error}",
+        "en": "Download failed:\n{error}",
+    },
+    "auto_update_dev_only": {
+        "pl": "Auto-aktualizacja dziala tylko w zbudowanym .exe (nie w python main.py).",
+        "en": "Self-update works only in the built .exe (not python main.py).",
+    },
     "language": {
         "pl": "Jezyk / Language:",
         "en": "Language / Jezyk:",

@@ -20,7 +20,7 @@ from src.crypto import encrypt_data, decrypt_data, hash_password_check
 logger = logging.getLogger(__name__)
 
 APP_NAME = "Civ4PBEMManager"
-APP_VERSION = "5.0.12"
+APP_VERSION = "5.0.13"
 
 
 def version_label() -> str:
@@ -66,6 +66,9 @@ PUBLIC_KEYS = {
     "install_id",
     # Last shown in-app notify flag timestamp per game
     "seen_notify",
+    # Self-update from GitHub Releases
+    "auto_update_check",
+    "skipped_update_version",
 }
 
 # Keys that are encrypted (sensitive — contain credentials)
@@ -273,6 +276,8 @@ class AppConfig:
             "save_path_mismatch_dismissed": "",
             "install_id": "",
             "seen_notify": {},
+            "auto_update_check": True,
+            "skipped_update_version": "",
         }
 
     def _ensure_install_id(self):

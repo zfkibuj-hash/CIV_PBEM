@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QPushButton, QDialogButtonBox, QTextEdit,
     QCheckBox, QFileDialog, QMessageBox, QFrame,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 from src.config import AppConfig
 from src.i18n import t, set_language
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 class SettingsDialog(QDialog):
     """Application settings dialog with tabbed layout."""
+
+    check_updates_requested = Signal()
 
     def __init__(self, config: AppConfig, parent=None):
         super().__init__(parent)
@@ -170,6 +172,16 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(appearance_group)
 
+        update_group = QGroupBox(t("auto_update_group"))
+        update_form = QFormLayout(update_group)
+        self.auto_update_check = QCheckBox(t("auto_update_check"))
+        self.auto_update_check.setChecked(self.config.get("auto_update_check", True))
+        update_form.addRow(self.auto_update_check)
+        self.btn_check_update = QPushButton(t("auto_update_check_now"))
+        self.btn_check_update.clicked.connect(self._on_check_update_now)
+        update_form.addRow(self.btn_check_update)
+        layout.addWidget(update_group)
+
         # ---- Civ4 BTS installations (multi-edition) ----
         installs_group = QGroupBox(t("civ4_installations_group"))
         installs_layout = QVBoxLayout(installs_group)
@@ -197,6 +209,7 @@ class SettingsDialog(QDialog):
 
             # exe path row -- disabled until checkbox ticked
             exe_layout = QHBoxLayout()
+
             exe_edit = QLineEdit(cfg.get("exe_path", ""))
             exe_edit.setPlaceholderText("C:\\...\\Civ4BeyondSword.exe")
             exe_edit.setEnabled(cfg.get("enabled", False))
@@ -1071,6 +1084,12 @@ class SettingsDialog(QDialog):
         if path:
             self._apply_save_layout(path)
 
+    def _on_check_update_now(self):
+        """Ask the main window / host to run a manual update check."""
+        # Persist checkbox so a following check uses the latest preference.
+        self.config.set("auto_update_check", self.auto_update_check.isChecked())
+        self.check_updates_requested.emit()
+
     def _rerun_setup_wizard(self):
         """Re-open the first-run wizard from Settings."""
         from src.gui.dialogs.setup_wizard import SetupWizard
@@ -1135,6 +1154,7 @@ class SettingsDialog(QDialog):
         self.config.set("check_interval_minutes", self.check_interval.value())
         self.config.set("dark_mode", self.dark_mode_check.isChecked())
         self.config.set("auto_send", self.auto_send_check.isChecked())
+        self.config.set("auto_update_check", self.auto_update_check.isChecked())
 
         from src.autostart import is_autostart_enabled, set_autostart
         want_autostart = self.autostart_check.isChecked()
