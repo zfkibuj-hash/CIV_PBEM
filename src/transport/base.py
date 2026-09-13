@@ -149,6 +149,13 @@ class BaseTransport(ABC):
         """Delete a remote file. Returns True on success."""
         return False
 
+    def try_list_saves(self, game_name: str) -> list[str]:
+        """Best-effort directory listing. May be empty; Check must not require it."""
+        try:
+            return self.list_files(game_name) or []
+        except Exception:
+            return []
+
     def purge_game(self, game_name: str) -> tuple[bool, int]:
         """Delete all remote files for one game. Returns (success, count)."""
         deleted = 0

@@ -20,7 +20,7 @@ from src.crypto import encrypt_data, decrypt_data, hash_password_check
 logger = logging.getLogger(__name__)
 
 APP_NAME = "Civ4PBEMManager"
-APP_VERSION = "5.0.6"
+APP_VERSION = "5.0.12"
 
 
 def version_label() -> str:
@@ -94,6 +94,17 @@ def get_games_dir() -> Path:
     games_dir = get_config_dir() / "games"
     games_dir.mkdir(parents=True, exist_ok=True)
     return games_dir
+
+
+def get_backups_dir(game_name: str = "") -> Path:
+    """Local revert / repair backups under AppData."""
+    root = get_config_dir() / "backups"
+    if game_name:
+        # Keep folder name filesystem-safe
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in game_name)
+        root = root / (safe or "game")
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 class AppConfig:

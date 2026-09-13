@@ -191,6 +191,54 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Przebuduj nazwe",
         "en": "Rebuild name",
     },
+    "edit_queue_from_server": {
+        "pl": "Z serwera...",
+        "en": "From server...",
+    },
+    "edit_queue_from_server_hint": {
+        "pl": "Wczytaj liste save'ow z FTP (albo z historii/lokalnych, jesli listing nie dziala). Potem mozesz poprawic recznie.",
+        "en": "Load the save list from FTP (or history/local files if listing fails). You can edit afterwards.",
+    },
+    "edit_queue_from_server_empty": {
+        "pl": "Brak save'ow do wczytania (serwer, historia i folder sa puste).",
+        "en": "No saves to load (server, history and folder are empty).",
+    },
+    "edit_queue_from_server_src_server": {
+        "pl": "lista z FTP",
+        "en": "FTP listing",
+    },
+    "edit_queue_from_server_src_local": {
+        "pl": "historia + lokalne pliki (listing FTP niedostepny)",
+        "en": "history + local files (FTP listing unavailable)",
+    },
+    "edit_queue_from_server_confirm": {
+        "pl": "Wczytac {n} save'ow ({source}) do tabeli?\n"
+              "Mozesz potem poprawic seq i ture recznie — numeracja idzie w dol.\n\n{preview}",
+        "en": "Load {n} saves ({source}) into the table?\n"
+              "You can then fix seq and turn by hand — numbering continues downward.\n\n{preview}",
+    },
+    "edit_queue_from_server_loaded": {
+        "pl": "Wczytano {n} save'ow do tabeli.\n\n"
+              "Po Zapisz bedzie czekal: {player}\n"
+              "Biezacy plik:\n{filename}\n\n"
+              "Kliknij Zapisz (z publikacja na FTP), inaczej nic sie nie zmieni.",
+        "en": "Loaded {n} saves into the table.\n\n"
+              "After Save, waiting for: {player}\n"
+              "Current file:\n{filename}\n\n"
+              "Click Save (with FTP publish), otherwise nothing changes.",
+    },
+    "edit_queue_propagate": {
+        "pl": "Zmiana seq/tury idzie w dol (seq +1, tura blokami po liczbie graczy)",
+        "en": "Seq/turn edits continue downward (seq +1, turn in blocks of player count)",
+    },
+    "edit_queue_propagate_hint": {
+        "pl": "Przyklad: 0000,0001,0002,0003,0002... — zmiana piatego seq na 0004 ustawia dalej 0005,0006. "
+              "Tura: przy 4 graczach cztery save'y z T0001, potem T0002. "
+              "Wylacz, zeby zmienic tylko jeden wiersz.",
+        "en": "Example: 0000,0001,0002,0003,0002... — changing the fifth seq to 0004 sets the rest to 0005,0006. "
+              "Turn: with 4 players, four saves share T0001, then T0002. "
+              "Uncheck to edit a single row.",
+    },
     "edit_queue_set_current": {
         "pl": "Ten wiersz jest biezacy",
         "en": "This row is current",
@@ -374,12 +422,16 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Save is not addressed to the next player (to). Check you ended your turn in Civ4.",
     },
     "upload_still_your_turn": {
-        "pl": "Wyglada na to, ze nadal Twoja tura — w nazwie save'a jest Twoje imie po _to_.",
-        "en": "Looks like it is still your turn — your name appears after _to_ in the save.",
+        "pl": "Nadal Twoja tura — w nazwie save'a po _to_ jest Twoj lider/nick. W Civ4: End Turn, haslo nastepnego gracza, dopiero potem Save.",
+        "en": "Still your turn — your leader/nick appears after _to_ in the save name. In Civ4: End Turn, next player's password, then Save.",
     },
     "upload_wrong_leader": {
-        "pl": "Save powinien byc dla lidera {leader} (nastepny gracz). Zakoncz ture i zapisz ponownie.",
-        "en": "Save should be for leader {leader} (next player). End your turn and save again.",
+        "pl": "Save powinien byc dla lidera {leader} (nastepny gracz). Zakoncz ture (End Turn) i zapisz ponownie — nie wysylaj save'a srodku swojej tury.",
+        "en": "Save should be for leader {leader} (next player). End your turn and save again — do not upload a mid-turn save.",
+    },
+    "upload_need_civ4_leader": {
+        "pl": "Brak mapowania lidera Civ4 dla nastepnego gracza (oczekiwany: {leader}). Edytuj gre → ustaw liderow (Alexander, Frederick, …). Bez tego Manager nie odrzuci save'a sprzed End Turn.",
+        "en": "Next player has no Civ4 leader mapping (expected: {leader}). Edit Game → set leaders (Alexander, Frederick, …). Without that the Manager cannot reject a mid-turn save.",
     },
     "upload_native_no_to": {
         "pl": "Nierozpoznana nazwa save'a Civ4 (brak _to_).",
@@ -1459,8 +1511,10 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Name did not match — cancelled.",
     },
     "revert_remote_cleanup_hint": {
-        "pl": "Na serwerze zostana usuniete nowsze save'y i flagi powiadomien.",
-        "en": "Newer saves and notification flags will be removed from the server.",
+        "pl": "Przed usunieciem Manager zrobi backup (lokalnie i w podfolderze na FTP).\n"
+              "Na serwerze zostana usuniete nowsze save'y i flagi powiadomien.",
+        "en": "Before deleting, the Manager makes a backup (locally and in an FTP subfolder).\n"
+              "Newer saves and notification flags will be removed from the server.",
     },
     "admin_password_prompt": {
         "pl": "Haslo admina gry (puste = bez hasla):",
@@ -1617,6 +1671,26 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "stats_no_game": {
         "pl": "Wybierz gre aby wyswietlic statystyki.",
         "en": "Select a game to view statistics.",
+    },
+    "stats_regenerate": {
+        "pl": "Przelicz z dat save'ow",
+        "en": "Rebuild from save dates",
+    },
+    "stats_regenerate_hint": {
+        "pl": "Nadpisuje czasy tur datami plikow save na tym komputerze (najstarsza kopia). Kolejnosc tur sie nie zmienia.",
+        "en": "Overwrite turn times with local save file dates (oldest copy). Turn order is unchanged.",
+    },
+    "stats_regenerate_ok": {
+        "pl": "Zaktualizowano daty {count} tur z plikow save i wyslano na serwer.",
+        "en": "Updated dates for {count} turns from save files and published to the server.",
+    },
+    "stats_regenerate_ok_local": {
+        "pl": "Zaktualizowano daty {count} tur z plikow save (lokalnie; serwer nie przyjal).",
+        "en": "Updated dates for {count} turns from save files (saved locally; server publish failed).",
+    },
+    "stats_regenerate_none": {
+        "pl": "Brak lokalnych save'ow pasujacych do historii. Pobierz save'y albo sprawdz folder.",
+        "en": "No local saves match the turn history. Download the saves or check the folder.",
     },
 
     # --- Auto-launch ---

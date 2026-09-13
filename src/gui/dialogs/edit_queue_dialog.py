@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable, Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
-    QListWidget, QListWidgetItem, QMessageBox, QPushButton,
-    QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog,
+    QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
+    QHeaderView, QLabel, QListWidget, QListWidgetItem, QMessageBox,
+    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
 from src.config import AppConfig
@@ -19,15 +21,25 @@ from src.saves import iter_save_dirs
 
 COL_SEQ, COL_TURN, COL_FROM, COL_TO, COL_FILE = range(5)
 
+ListRemoteFn = Callable[[], tuple[list[str], str]]
+
 
 class EditQueueDialog(QDialog):
     """Assign each save to a queue slot and set who plays next."""
 
-    def __init__(self, config: AppConfig, game: Game, parent=None):
+    def __init__(
+        self,
+        config: AppConfig,
+        game: Game,
+        parent=None,
+        list_remote: Optional[ListRemoteFn] = None,
+    ):
         super().__init__(parent)
         self.config = config
         self.game = game
+        self._list_remote = list_remote
         self._publish = True
+        self._propagating = False
         self.setWindowTitle(t("edit_queue_title", name=game.name))
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setMinimumSize(860, 620)
@@ -75,10 +87,14 @@ class EditQueueDialog(QDialog):
         self.seq_spin.setRange(0, 99999)
         self.chk_sync_wait = QCheckBox(t("edit_queue_sync_wait"))
         self.chk_sync_wait.setChecked(True)
+        self.chk_propagate = QCheckBox(t("edit_queue_propagate"))
+        self.chk_propagate.setChecked(True)
+        self.chk_propagate.setToolTip(t("edit_queue_propagate_hint"))
         form.addRow(t("edit_queue_waiting"), self.wait_combo)
         form.addRow(t("edit_queue_turn"), self.turn_spin)
         form.addRow(t("edit_queue_next_seq"), self.seq_spin)
         form.addRow(self.chk_sync_wait)
+        form.addRow(self.chk_propagate)
         layout.addWidget(pointer)
 
         saves = QGroupBox(t("edit_queue_saves"))
@@ -120,11 +136,14 @@ class EditQueueDialog(QDialog):
         self.btn_pick.clicked.connect(self._pick_file)
         self.btn_rebuild = QPushButton(t("edit_queue_rebuild"))
         self.btn_rebuild.clicked.connect(self._rebuild_selected_name)
+        self.btn_from_server = QPushButton(t("edit_queue_from_server"))
+        self.btn_from_server.setToolTip(t("edit_queue_from_server_hint"))
+        self.btn_from_server.clicked.connect(self._rebuild_from_server)
         self.btn_current = QPushButton(t("edit_queue_set_current"))
         self.btn_current.clicked.connect(self._set_row_current)
         for b in (
             self.btn_add, self.btn_remove, self.btn_up, self.btn_down,
-            self.btn_pick, self.btn_rebuild, self.btn_current,
+            self.btn_pick, self.btn_rebuild, self.btn_from_server, self.btn_current,
         ):
             row_btns.addWidget(b)
         row_btns.addStretch()
@@ -206,6 +225,8 @@ class EditQueueDialog(QDialog):
         turn = QSpinBox()
         turn.setRange(0, 9999)
         turn.setValue(int(slot.get("turn_number") or 0))
+        seq.valueChanged.connect(self._on_seq_spin)
+        turn.valueChanged.connect(self._on_turn_spin)
         self.table.setCellWidget(r, COL_SEQ, seq)
         self.table.setCellWidget(r, COL_TURN, turn)
         self.table.setCellWidget(r, COL_FROM, self._player_combo(slot.get("from_name") or ""))
@@ -331,6 +352,136 @@ class EditQueueDialog(QDialog):
         self._replace_table(slots, select=row)
         self._maybe_sync_wait()
 
+    def _row_of_widget(self, widget) -> int:
+        if widget is None:
+            return -1
+        for r in range(self.table.rowCount()):
+            if (
+                self.table.cellWidget(r, COL_SEQ) is widget
+                or self.table.cellWidget(r, COL_TURN) is widget
+            ):
+                return r
+        return -1
+
+    def _on_seq_spin(self, _value: int = 0):
+        if self._propagating or not self.chk_propagate.isChecked():
+            return
+        row = self._row_of_widget(self.sender())
+        if row >= 0:
+            self._propagate_from(row, seq=True, turn=False)
+
+    def _on_turn_spin(self, _value: int = 0):
+        if self._propagating or not self.chk_propagate.isChecked():
+            return
+        row = self._row_of_widget(self.sender())
+        if row >= 0:
+            self._propagate_from(row, seq=False, turn=True)
+
+    def _propagate_from(self, start: int, *, seq: bool, turn: bool):
+        slots = self._read_slots()
+        if start < 0 or start >= len(slots):
+            return
+        n_players = max(1, len(self._order_names()))
+        if seq:
+            Game.propagate_queue_seq(slots, start)
+        if turn:
+            Game.propagate_queue_turn(slots, start, n_players)
+        for i in range(start, len(slots)):
+            self.game.refresh_queue_slot_filename(slots[i])
+        self._write_slots_from(start, slots)
+        self._sync_pointer_from_slots(slots)
+        self._maybe_sync_wait()
+
+    def _write_slots_from(self, start: int, slots: list[dict]):
+        self._propagating = True
+        try:
+            for i in range(start, min(len(slots), self.table.rowCount())):
+                seq_w = self.table.cellWidget(i, COL_SEQ)
+                turn_w = self.table.cellWidget(i, COL_TURN)
+                if seq_w:
+                    seq_w.blockSignals(True)
+                    seq_w.setValue(int(slots[i].get("seq") or 0))
+                    seq_w.blockSignals(False)
+                if turn_w:
+                    turn_w.blockSignals(True)
+                    turn_w.setValue(int(slots[i].get("turn_number") or 0))
+                    turn_w.blockSignals(False)
+                item = self.table.item(i, COL_FILE)
+                if item is None:
+                    item = QTableWidgetItem()
+                    self.table.setItem(i, COL_FILE, item)
+                item.setText(slots[i].get("filename") or "")
+        finally:
+            self._propagating = False
+
+    def _sync_pointer_from_slots(self, slots: list[dict]):
+        if not slots:
+            return
+        max_seq = max(int(s.get("seq") or 0) for s in slots)
+        self.seq_spin.setValue(max_seq + 1)
+
+    def _rebuild_from_server(self):
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        try:
+            if self._list_remote:
+                names, source = self._list_remote()
+            else:
+                names, source = self.game.history_save_filenames(), "local"
+        except Exception as e:
+            QMessageBox.warning(self, t("error"), str(e))
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        slots = self.game.slots_from_save_names(names)
+        if not slots:
+            QMessageBox.warning(self, t("error"), t("edit_queue_from_server_empty"))
+            return
+        preview_lines = []
+        for slot in slots[:24]:
+            preview_lines.append(
+                f"{int(slot['seq']):04d}  T{int(slot['turn_number']):04d}  "
+                f"{slot.get('from_name') or '?'} -> {slot.get('to_name') or '?'}"
+            )
+        if len(slots) > 24:
+            preview_lines.append(f"... +{len(slots) - 24}")
+        source_txt = t("edit_queue_from_server_src_" + source)
+        reply = QMessageBox.question(
+            self,
+            t("edit_queue_from_server"),
+            t(
+                "edit_queue_from_server_confirm",
+                n=len(slots),
+                source=source_txt,
+                preview="\n".join(preview_lines),
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self._replace_table(slots, select=len(slots) - 1)
+        self._sync_pointer_from_slots(slots)
+        last = slots[-1]
+        if last.get("turn_number") is not None:
+            self.turn_spin.setValue(int(last.get("turn_number") or 0))
+        # Always set waiting from last save after a server rebuild
+        to_name = last.get("to_name") or ""
+        if to_name:
+            idx = self.wait_combo.findData(to_name)
+            if idx >= 0:
+                self.wait_combo.setCurrentIndex(idx)
+        wait = self.wait_combo.currentData() or self.wait_combo.currentText() or "?"
+        QMessageBox.information(
+            self,
+            t("edit_queue_from_server"),
+            t(
+                "edit_queue_from_server_loaded",
+                n=len(slots),
+                player=wait,
+                filename=last.get("filename") or "?",
+            ),
+        )
+
     def _rebuild_selected_name(self):
         row = self._selected_row()
         if row < 0:
@@ -376,6 +527,12 @@ class EditQueueDialog(QDialog):
 
     def _save(self):
         slots = self._read_slots()
+        if self.chk_sync_wait.isChecked() and slots:
+            to_name = slots[-1].get("to_name") or ""
+            if to_name:
+                idx = self.wait_combo.findData(to_name)
+                if idx >= 0:
+                    self.wait_combo.setCurrentIndex(idx)
         wait = self.wait_combo.currentData() or self.wait_combo.currentText()
         last = (slots[-1].get("filename") if slots else "") or ""
         reply = QMessageBox.question(
@@ -404,5 +561,10 @@ class EditQueueDialog(QDialog):
         if err:
             QMessageBox.warning(self, t("error"), t(err))
             return
+        # Last save on disk is the source of truth for whose turn it is
+        if slots:
+            latest = slots[-1].get("filename") or ""
+            if latest:
+                self.game.sync_current_player_from_save(latest)
         self._publish = self.chk_publish.isChecked()
         self.accept()

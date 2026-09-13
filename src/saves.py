@@ -306,6 +306,42 @@ def find_save_file(
     return None
 
 
+def collect_save_mtimes(game, dirs: Iterable[Path]) -> dict[str, float]:
+    """Oldest filesystem mtime per managed save name (copies in pbem / Civ4)."""
+    found: dict[str, float] = {}
+    display: dict[str, str] = {}
+
+    def consider(path: Path) -> None:
+        name = path.name
+        if not name.endswith(SAVE_EXTENSION):
+            return
+        if not game.save_belongs_to_game(name):
+            return
+        try:
+            mtime = float(path.stat().st_mtime)
+        except OSError:
+            return
+        key = name.casefold()
+        prev = found.get(key)
+        if prev is None or mtime < prev:
+            found[key] = mtime
+            display[key] = name
+
+    patterns = (
+        f"{game.name}_*{SAVE_EXTENSION}",
+        f"*_{game.name}_*{SAVE_EXTENSION}",
+    )
+    for pattern in patterns:
+        for path in glob_saves(pattern, dirs, game.name):
+            consider(path)
+    for filename in game.history_save_filenames():
+        for folder in _search_bases(dirs, game.name):
+            path = folder / filename
+            if path.is_file():
+                consider(path)
+    return {display[key]: ts for key, ts in found.items()}
+
+
 def glob_saves(
     pattern: str,
     dirs: Iterable[Path],

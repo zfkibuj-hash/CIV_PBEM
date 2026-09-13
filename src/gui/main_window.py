@@ -403,18 +403,9 @@ class MainWindow(QMainWindow):
     def _load_games(self):
         """Load all game files from config directory."""
         from src.config import get_games_dir
-        from src.saves import glob_saves, iter_save_dirs
         games_dir = get_games_dir()
         prev_name = self.current_game.name if self.current_game else None
         self.games = []
-        try:
-            save_dirs = iter_save_dirs(
-                self.config.save_path,
-                self.config.get("civ4_save_path", ""),
-                self.config.get("mirror_saves", True),
-            )
-        except Exception:
-            save_dirs = []
         for f in games_dir.glob("*.json"):
             # Skip remote sync / cache files (not full game documents)
             stem = f.stem
@@ -424,16 +415,9 @@ class MainWindow(QMainWindow):
                 continue
             try:
                 game = Game.load_from_file(f, self.config.master_password)
-                local_names: list[str] = []
-                for pattern in (
-                    f"{game.name}_*.CivBeyondSwordSave",
-                    f"*_{game.name}_*.CivBeyondSwordSave",
-                ):
-                    local_names.extend(
-                        p.name for p in glob_saves(pattern, save_dirs, game.name)
-                    )
-                if game.repair_turn_state_from_saves(local_names):
-                    game.save_to_file(games_dir, self.config.master_password)
+                # Do not repair whose-turn from leftover local saves. After
+                # revert / queue rebuild a stale 0019_…to_me on disk would
+                # snap the banner back to YOUR TURN.
                 self.games.append(game)
             except Exception as e:
                 logger.error(f"Failed to load game {f}: {e}")
@@ -1311,7 +1295,12 @@ class MainWindow(QMainWindow):
             if not AppController.verify_admin_password(game, pwd):
                 QMessageBox.warning(self, t("error"), t("wrong_password"))
                 return
-        dialog = EditQueueDialog(self.config, game, self)
+        dialog = EditQueueDialog(
+            self.config,
+            game,
+            self,
+            list_remote=getattr(self, "list_queue_remote_fn", None),
+        )
         if dialog.exec() != QDialog.Accepted:
             return
         from src.config import get_games_dir
@@ -1527,8 +1516,14 @@ class MainWindow(QMainWindow):
         if not self.current_game:
             QMessageBox.information(self, t("info"), t("stats_no_game"))
             return
-        dialog = GameStatsDialog(self.config, self.current_game, self)
+        dialog = GameStatsDialog(
+            self.config,
+            self.current_game,
+            self,
+            regenerate=getattr(self, "regenerate_stats_fn", None),
+        )
         dialog.exec()
+        self._update_game_view()
 
     def _resolve_edition_for_launch(self) -> Optional[tuple[str, dict]]:
         """Determine which edition to use for launching Civ4.

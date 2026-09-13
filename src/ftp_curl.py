@@ -40,6 +40,21 @@ def ftp_url(host: str, port: int, remote_path: str) -> str:
     return f"ftp://{host}{enc}"
 
 
+def ftp_list_urls(host: str, port: int, remote_dir: str) -> list[str]:
+    """Directory URLs for curl LIST. Trailing slash is required (else RETR)."""
+    rel = ftp_url(host, port, remote_dir)
+    if not rel.endswith("/"):
+        rel += "/"
+    parts = [quote(p, safe="") for p in (remote_dir or "").strip("/").split("/") if p]
+    port_i = int(port or 21)
+    hostport = f"{host}:{port_i}" if port_i != 21 else host
+    abs_url = f"ftp://{hostport}/%2f{'/'.join(parts)}/" if parts else f"ftp://{hostport}/%2f/"
+    urls = [rel]
+    if abs_url not in urls:
+        urls.append(abs_url)
+    return urls
+
+
 def curl_get(
     *,
     host: str,
@@ -104,6 +119,7 @@ def curl_put(
     remote_path: str,
     local_path: Path,
     max_time: int = 15,
+    create_dirs: bool = False,
 ) -> tuple[bool, str]:
     curl = find_curl()
     if not curl:
@@ -117,9 +133,10 @@ def curl_put(
         "--connect-timeout", str(_CONNECT),
         "--max-time", str(max_time),
         "-u", f"{username}:{password}",
-        "-T", str(local_path),
-        url,
     ]
+    if create_dirs:
+        cmd.append("--ftp-create-dirs")
+    cmd.extend(["-T", str(local_path), url])
     logger.info("curl PUT %s", remote_path)
     try:
         proc = subprocess.run(
@@ -184,3 +201,148 @@ def pull_game_state_json(
     if best is not None:
         return best, best_name, ""
     return None, "", last_err or "no turns/state on FTP"
+
+
+def parse_ftp_list_text(text: str) -> list[str]:
+    """Basenames from FTP LIST (Unix or DOS). Skips directories."""
+    names: list[str] = []
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line or line.lower().startswith("total "):
+            continue
+        if line[0] in "dD" and (len(line) == 1 or line[1] in "-rwx"):
+            continue
+        if "<DIR>" in line.upper():
+            continue
+        parts = line.split()
+        if not parts:
+            continue
+        if line[0] in "-l" and len(parts) >= 9:
+            name = line.split(None, 8)[-1]
+        else:
+            name = parts[-1]
+        name = Path(str(name).replace("\\", "/")).name
+        if name and name not in (".", ".."):
+            names.append(name)
+    if not names:
+        for raw in (text or "").splitlines():
+            n = Path(raw.strip().replace("\\", "/")).name
+            if n.lower().endswith(".civbeyondswordsave"):
+                names.append(n)
+    return names
+
+
+def curl_list(
+    *,
+    host: str,
+    port: int = 21,
+    username: str,
+    password: str,
+    remote_dir: str,
+    max_time: int = 8,
+) -> tuple[list[str], str]:
+    """FTP LIST via curl (not NLST). Empty list + error on failure/timeout."""
+    curl = find_curl()
+    if not curl:
+        return [], "curl.exe not found (System32)"
+    flags = 0
+    if os.name == "nt":
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    last_err = ""
+    for url in ftp_list_urls(host, port, remote_dir):
+        cmd = [
+            curl, "-sS",
+            "--connect-timeout", str(_CONNECT),
+            "--max-time", str(max_time),
+            "-u", f"{username}:{password}",
+            url,
+        ]
+        logger.info("curl LIST %s (max %ss)", url.split("@")[-1] if "@" in url else url, max_time)
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True,
+                timeout=max_time + 2, creationflags=flags,
+            )
+        except subprocess.TimeoutExpired:
+            last_err = f"timeout >{max_time}s"
+            logger.error("curl LIST timeout >%ss", max_time)
+            continue
+        except Exception as e:
+            last_err = str(e)
+            logger.exception("curl LIST error")
+            continue
+        if proc.returncode != 0:
+            last_err = (proc.stderr or proc.stdout or f"exit {proc.returncode}").strip()[:200]
+            logger.warning("curl LIST fail: %s", last_err)
+            continue
+        names = parse_ftp_list_text(proc.stdout or "")
+        if names:
+            logger.info("curl LIST ok %d names", len(names))
+            return names, ""
+        last_err = "empty listing"
+    return [], last_err or "empty listing"
+
+
+def curl_delete(
+    *,
+    host: str,
+    port: int = 21,
+    username: str,
+    password: str,
+    remote_dir: str,
+    filename: str,
+    max_time: int = 8,
+) -> tuple[bool, str]:
+    """FTP DELE via curl QUOTE. Filename must be a basename."""
+    name = Path(str(filename or "")).name
+    if not name or name in (".", "..") or "/" in name or "\\" in name:
+        return False, "bad filename"
+    curl = find_curl()
+    if not curl:
+        return False, "curl.exe not found"
+    url = ftp_list_urls(host, port, remote_dir)[0]
+    flags = 0
+    if os.name == "nt":
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    cmd = [
+        curl, "-sS",
+        "--connect-timeout", str(_CONNECT),
+        "--max-time", str(max_time),
+        "-u", f"{username}:{password}",
+        "-Q", f"DELE {name}",
+        url,
+    ]
+    logger.info("curl DELE %s", name)
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True,
+            timeout=max_time + 2, creationflags=flags,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"timeout >{max_time}s"
+    except Exception as e:
+        return False, str(e)
+    if proc.returncode == 0:
+        return True, ""
+    # Some hosts want an absolute path in DELE
+    abs_name = f"{(remote_dir or '').rstrip('/')}/{name}".replace("//", "/")
+    cmd_abs = [
+        curl, "-sS",
+        "--connect-timeout", str(_CONNECT),
+        "--max-time", str(max_time),
+        "-u", f"{username}:{password}",
+        "-Q", f"DELE {abs_name}",
+        url,
+    ]
+    try:
+        proc2 = subprocess.run(
+            cmd_abs, capture_output=True, text=True,
+            timeout=max_time + 2, creationflags=flags,
+        )
+    except Exception as e:
+        err = (proc.stderr or proc.stdout or f"exit {proc.returncode}").strip()
+        return False, err[:200] or str(e)
+    if proc2.returncode != 0:
+        err = (proc2.stderr or proc2.stdout or proc.stderr or f"exit {proc2.returncode}").strip()
+        return False, err[:200] or f"curl exit {proc2.returncode}"
+    return True, ""

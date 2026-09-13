@@ -401,6 +401,11 @@ def main():
         window.status_label.setText, Qt.ConnectionType.QueuedConnection,
     )
     controller.games_updated.connect(window._load_games)
+    window.regenerate_stats_fn = controller.regenerate_stats_from_saves
+    window.list_queue_remote_fn = (
+        lambda: controller.list_saves_for_queue_rebuild(window.current_game)
+        if window.current_game else ([], "local")
+    )
 
     _last_health_level = "ok"
     _HEALTH_RANK = {"ok": 0, "info": 1, "warn": 2, "error": 3}

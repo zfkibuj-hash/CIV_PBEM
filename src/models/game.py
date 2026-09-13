@@ -426,6 +426,97 @@ class Game:
             f"_from_{sender}_to_{recipient}.CivBeyondSwordSave"
         )
 
+    @staticmethod
+    def propagate_queue_seq(slots: list[dict], start_index: int) -> None:
+        """From start_index downward, seq continues: n, n+1, n+2, …"""
+        if start_index < 0 or start_index >= len(slots):
+            return
+        start = int(slots[start_index].get("seq") or 0)
+        for offset, slot in enumerate(slots[start_index:]):
+            slot["seq"] = start + offset
+
+    @staticmethod
+    def propagate_queue_turn(
+        slots: list[dict], start_index: int, players_per_round: int,
+    ) -> None:
+        """From start_index downward, keep T for `players_per_round` saves, then +1.
+
+        If earlier rows already share this T, finish that block first
+        (4 players → 4 saves with T0001).
+        """
+        n = max(1, int(players_per_round or 1))
+        if start_index < 0 or start_index >= len(slots):
+            return
+        t0 = int(slots[start_index].get("turn_number") or 0)
+        prev_same = 0
+        for j in range(start_index - 1, -1, -1):
+            if int(slots[j].get("turn_number") or 0) == t0:
+                prev_same += 1
+            else:
+                break
+        remaining = max(0, n - (prev_same + 1))
+        idx = start_index + 1
+        for _ in range(remaining):
+            if idx >= len(slots):
+                return
+            slots[idx]["turn_number"] = t0
+            idx += 1
+        turn = t0 + 1
+        while idx < len(slots):
+            for _ in range(n):
+                if idx >= len(slots):
+                    return
+                slots[idx]["turn_number"] = turn
+                idx += 1
+            turn += 1
+
+    def slots_from_save_names(self, names: list[str]) -> list[dict]:
+        """Parse managed seq+from+to save names into queue slots.
+
+        Drops native Civ4 names and legacy sender-only files. If two files
+        share a seq, keeps the one whose name starts with ``0007_``.
+        """
+        by_seq: dict[int, dict] = {}
+        seen: set[str] = set()
+        for raw in names or []:
+            name = Path(str(raw)).name.strip()
+            key = name.casefold()
+            if (
+                not name
+                or key in seen
+                or not name.endswith(".CivBeyondSwordSave")
+                or not self.save_belongs_to_game(name)
+            ):
+                continue
+            seq = self.parse_save_seq(name)
+            turn, sender, recipient = self.parse_save_filename(name)
+            if seq is None or not sender or not recipient:
+                continue
+            seen.add(key)
+            slot = self.slot_from_save_filename(name)
+            prev = by_seq.get(seq)
+            padded = name.startswith(f"{seq:04d}_") or name.startswith(f"{seq}_")
+            if prev is None:
+                by_seq[seq] = slot
+                continue
+            prev_name = str(prev.get("filename") or "")
+            prev_padded = prev_name.startswith(f"{seq:04d}_") or prev_name.startswith(f"{seq}_")
+            if padded and not prev_padded:
+                by_seq[seq] = slot
+        return [by_seq[k] for k in sorted(by_seq)]
+
+    def refresh_queue_slot_filename(self, slot: dict) -> None:
+        from_name = (slot.get("from_name") or "").strip()
+        to_name = (slot.get("to_name") or "").strip()
+        if not from_name or not to_name:
+            return
+        slot["filename"] = self.managed_save_filename(
+            int(slot.get("seq") or 0),
+            int(slot.get("turn_number") or 0),
+            from_name,
+            to_name,
+        )
+
     def slot_from_save_filename(
         self, filename: str, timestamp: float = 0.0,
     ) -> dict:
@@ -536,10 +627,15 @@ class Game:
         # Reset game state to just before that turn was played
         self.current_turn = target_turn.turn_number
 
-        # Find the player who made that turn and set them as current
-        idx = self.get_player_index(target_turn.player_name)
-        if idx is not None:
-            self.current_player_index = idx
+        # Who should load/play: recipient of the last remaining save, else the
+        # player whose turn we are replaying.
+        latest = self.incoming_save_filename()
+        if latest and self.sync_current_player_from_save(latest):
+            pass
+        else:
+            idx = self.get_player_index(target_turn.player_name)
+            if idx is not None:
+                self.current_player_index = idx
 
         # Next managed upload continues after the save we reverted to
         seq = self.parse_save_seq(target_turn.filename) if target_turn.filename else None
@@ -642,6 +738,33 @@ class Game:
                 seen.append(name)
                 known.add(name)
         return seen
+
+    def apply_timestamps_from_save_mtimes(self, mtimes: dict[str, float]) -> int:
+        """Copy local save dates onto history rows. Returns how many timestamps changed."""
+        if not mtimes:
+            return 0
+        by_name = {str(name).casefold(): float(ts) for name, ts in mtimes.items() if ts}
+        updated = 0
+        for turn in self.history:
+            name = Path(turn.filename).name if turn.filename else ""
+            if not name:
+                continue
+            ts = by_name.get(name.casefold())
+            if ts is None:
+                continue
+            if abs(float(turn.timestamp or 0.0) - ts) < 1.0:
+                continue
+            turn.timestamp = ts
+            updated += 1
+        if not updated:
+            return 0
+        stamps = [float(t.timestamp) for t in self.history if t.timestamp]
+        if stamps:
+            earliest = min(stamps)
+            if not self.created_at or self.created_at > earliest:
+                self.created_at = earliest
+        self.bump_revision()
+        return updated
 
     def incoming_save_filename(self) -> Optional[str]:
         """Save the current player should load (uploaded by the previous player).
@@ -829,14 +952,37 @@ class Game:
             target = self.native_save_recipient(name)
             if not target:
                 return False, "upload_native_no_to"
-            if target.lower() == my_name.lower():
+            from src.civ4_save_info import normalize_leader_key
+
+            target_key = normalize_leader_key(target)
+            me = self.get_my_player(local_player_name) or self.current_player
+            my_leader = ((me.civ4_leader if me else "") or "").strip() or my_name
+            # Civ4 names files after the leader (_to_Alexander), not the PBEM nick.
+            if target_key in {
+                normalize_leader_key(my_name),
+                normalize_leader_key(my_leader),
+            }:
                 return False, "upload_still_your_turn"
+
+            next_keys = {normalize_leader_key(nxt.name)}
             next_leader = (nxt.civ4_leader or "").strip()
             if next_leader:
-                from src.civ4_save_info import normalize_leader_key
-                if normalize_leader_key(target) != normalize_leader_key(next_leader):
+                next_keys.add(normalize_leader_key(next_leader))
+            if target_key in next_keys:
+                return True, ""
+
+            # _to_ matches some other roster slot → wrong handoff / mid-turn save
+            for p in self.players:
+                keys = {normalize_leader_key(p.name)}
+                if (p.civ4_leader or "").strip():
+                    keys.add(normalize_leader_key(p.civ4_leader))
+                if target_key in keys:
                     return False, "upload_wrong_leader"
-            return True, ""
+
+            # Unknown _to_ and next player has no leader mapping — do not guess.
+            if not next_leader:
+                return False, "upload_need_civ4_leader"
+            return False, "upload_wrong_leader"
 
         if name.startswith(f"{self.name}_") and name.endswith(".CivBeyondSwordSave"):
             return False, "upload_unrecognized_name"
@@ -1021,15 +1167,25 @@ class Game:
 
         managed = sorted(managed, key=sort_key)
         known = {t.filename for t in self.history if t.filename}
+        hist_seqs = [
+            s for s in (self.parse_save_seq(t.filename) for t in self.history if t.filename)
+            if s is not None
+        ]
+        max_seq = max(hist_seqs) if hist_seqs else -1
         changed = False
 
         for name in managed:
             if name in known:
                 continue
+            seq = self.parse_save_seq(name)
+            # Leftover local files after revert (e.g. 0019 while history ends at
+            # 0017) must not jump the queue. Allow only the next seq, or
+            # anything if history is still empty.
+            if hist_seqs and seq is not None and seq > max_seq + 1:
+                continue
             turn, sender, _recipient = self.parse_save_filename(name)
             if turn is None and sender is None:
                 continue
-            # Prefer roster spelling for the uploader
             player = sender or "?"
             if sender:
                 idx = self.get_player_index(sender)
@@ -1038,10 +1194,13 @@ class Game:
             self.history.append(Turn(
                 turn_number=turn if turn is not None else self.current_turn,
                 player_name=player,
+                timestamp=0.0,
                 filename=name,
             ))
             known.add(name)
             changed = True
+            if seq is not None:
+                max_seq = max(max_seq, seq)
 
         if changed:
             self.history.sort(
@@ -1054,13 +1213,14 @@ class Game:
 
         Incomplete local folders must not win: if history already has 0004
         and the disk only still has 0003, keep 0004 as the current save.
+        Leftover local files after revert (seq jumping over a hole) are ignored.
         """
-        changed = self.sync_save_seq_from_filenames(remote_filenames)
+        changed = False
         if self.merge_history_from_remote_saves(remote_filenames):
             changed = True
-        pooled = list(remote_filenames or [])
-        pooled.extend(self.history_save_filenames())
-        latest = self.latest_managed_save(pooled)
+        if self.sync_save_seq_from_filenames(self.history_save_filenames()):
+            changed = True
+        latest = self.latest_managed_save(self.history_save_filenames())
         if not latest:
             latest = self.incoming_save_filename()
         if not latest:

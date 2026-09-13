@@ -9,11 +9,11 @@ from typing import Optional
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QMessageBox
 
-from src.config import AppConfig, get_games_dir
+from src.config import AppConfig, get_backups_dir, get_games_dir
 from src.models.game import Game, Player
 from src.saves import (
-    find_save_file, glob_saves, iter_save_dirs, local_save_path,
-    mirror_downloaded_save, latest_game_save,
+    collect_save_mtimes, find_save_file, glob_saves, iter_save_dirs,
+    local_save_path, mirror_downloaded_save, latest_game_save,
 )
 from src.i18n import t
 from src.transport.base import BaseTransport, is_game_remote_file
@@ -323,6 +323,72 @@ class AppController(QObject):
             return listed
         return game.history_save_filenames()
 
+    def list_saves_for_queue_rebuild(self, game: Game) -> tuple[list[str], str]:
+        """Saves for the queue editor.
+
+        Prefer a live FTP LIST (actual files). If listing fails, use
+        turns.json / local history but only keep names that still exist
+        on the server — otherwise deleted saves come back into the queue.
+        """
+        transport = self._create_transport_for_game(game)
+
+        def _managed(names: list[str]) -> list[str]:
+            return [s["filename"] for s in game.slots_from_save_names(names)]
+
+        def _still_on_server(names: list[str]) -> list[str]:
+            if not transport:
+                return names
+            exists = getattr(transport, "file_exists", None)
+            if not callable(exists):
+                return names
+            kept: list[str] = []
+            for name in names:
+                try:
+                    if exists(name, game.name):
+                        kept.append(name)
+                except Exception:
+                    logger.debug("file_exists failed for %s", name, exc_info=True)
+            return kept
+
+        if transport:
+            try:
+                listed = _managed(transport.try_list_saves(game.name) or [])
+            except Exception:
+                logger.exception("try_list_saves failed")
+                listed = []
+            if listed:
+                return listed, "server"
+            try:
+                data = self._download_turns_log(game, transport)
+            except Exception:
+                logger.exception("turns.json for queue rebuild failed")
+                data = None
+            if isinstance(data, dict):
+                remote_hist = [
+                    (row.get("filename") or "")
+                    for row in (data.get("history") or [])
+                    if isinstance(row, dict)
+                ]
+                listed = _managed(_still_on_server(remote_hist))
+                if listed:
+                    return listed, "server"
+
+        names: dict[str, str] = {}
+        for fn in game.history_save_filenames():
+            names[fn.casefold()] = fn
+        for pattern in (
+            f"*_{game.name}_T*.CivBeyondSwordSave",
+        ):
+            for path in glob_saves(pattern, self._save_dirs(), game.name):
+                if game.parse_save_seq(path.name) is not None:
+                    names.setdefault(path.name.casefold(), path.name)
+        candidates = _managed(list(names.values()))
+        if transport:
+            candidates = _managed(_still_on_server(candidates))
+            if candidates:
+                return candidates, "server"
+        return candidates, "local"
+
     def download_save_list(self, game: Game) -> list[str]:
         """Get list of saves available for THIS player (sent by previous player)."""
         my_name = self.config.player_name
@@ -416,7 +482,7 @@ class AppController(QObject):
 
         ok, err_key = game.validate_upload_filename(local_path.name, my_name)
         if not ok:
-            if err_key == "upload_wrong_leader":
+            if err_key in ("upload_wrong_leader", "upload_need_civ4_leader"):
                 nxt = game.next_player
                 leader = (nxt.civ4_leader or nxt.name) if nxt else "?"
                 return False, t(err_key, leader=leader)
@@ -977,7 +1043,7 @@ class AppController(QObject):
         game: Game,
         transport: BaseTransport,
         *,
-        repair_from_local_saves: bool = True,
+        repair_from_local_saves: bool = False,
     ) -> bool:
         """Upload local game JSON as {GameName}_state.json for other clients."""
         # Prefer turn pointer from any local managed saves so we never re-poison
@@ -1020,7 +1086,7 @@ class AppController(QObject):
         return bool(ok_state or ok_turns)
 
     def publish_turn_state(
-        self, game: Game, *, repair_from_local_saves: bool = True,
+        self, game: Game, *, repair_from_local_saves: bool = False,
     ) -> tuple[bool, str]:
         """Upload turns.json + state.json. Queue editor must pass repair=False."""
         game.save_to_file(get_games_dir(), self.config.master_password)
@@ -1034,6 +1100,23 @@ class AppController(QObject):
         if ok:
             return True, t("queue_published")
         return False, t("queue_publish_failed")
+
+    def regenerate_stats_from_saves(self, game: Game) -> tuple[bool, str, int]:
+        """Rewrite history timestamps from local save dates and publish."""
+        mtimes = collect_save_mtimes(game, self._save_dirs())
+        updated = game.apply_timestamps_from_save_mtimes(mtimes)
+        if not updated:
+            return False, t("stats_regenerate_none"), 0
+        game.save_to_file(get_games_dir(), self.config.master_password)
+        transport = self._create_transport_for_game(game)
+        published = False
+        if transport:
+            published = self._upload_game_state_file(
+                game, transport, repair_from_local_saves=False,
+            )
+        if published:
+            return True, t("stats_regenerate_ok", count=updated), updated
+        return True, t("stats_regenerate_ok_local", count=updated), updated
 
     def _upload_turns_log(self, game: Game, transport: BaseTransport) -> bool:
         """Publish `{game}_turns.json` — the portable turn log for other PCs."""
@@ -1257,6 +1340,11 @@ class AppController(QObject):
 
         transport = self._create_transport_for_game(game)
 
+        # Snapshot server/local state before we delete anything.
+        backup_local, backup_remote = self._backup_before_revert(
+            game, transport, history_index=history_index, by_player=my_game_name,
+        )
+
         # Try to download the save from that turn
         if transport and target_turn.filename:
             local_path = local_save_path(
@@ -1264,6 +1352,15 @@ class AppController(QObject):
             )
             transport.download(target_turn.filename, local_path, game.name)
             self._mirror_save(local_path, game.name)
+
+        # Filenames that must leave the server (listing often fails — delete by name).
+        # Include the reverted turn itself: it is removed from history and kept
+        # only as a local copy to replay. Leaving it on FTP makes "From server"
+        # put the finished move straight back into the queue.
+        drop_filenames = [
+            t.filename for t in game.history[history_index:]
+            if t.filename
+        ]
 
         # Revert game state (bumps state_revision)
         reverted = game.revert_to_turn(history_index)
@@ -1275,9 +1372,14 @@ class AppController(QObject):
         removed = 0
         if transport:
             removed = self._cleanup_remote_after_revert(
-                game, transport, keep_filename=reverted.filename or "",
+                game,
+                transport,
+                keep_filename="",
+                drop_filenames=drop_filenames,
             )
-            self._upload_game_state_file(game, transport)
+            self._upload_game_state_file(
+                game, transport, repair_from_local_saves=False,
+            )
             self.upload_game_config(game)
             for player in game.players:
                 if player.name == my_game_name:
@@ -1311,45 +1413,229 @@ class AppController(QObject):
         msg = f"Przywrocono do tury {reverted.turn_number} ({reverted.player_name})"
         if transport and removed:
             msg += f" — usunieto {removed} plik(ow) z serwera"
+        if backup_local:
+            msg += f" — backup: {backup_local}"
+        if backup_remote:
+            msg += f" (FTP: {backup_remote}/)"
         return True, msg
+
+    def _backup_before_revert(
+        self,
+        game: Game,
+        transport: Optional[BaseTransport],
+        *,
+        history_index: int,
+        by_player: str,
+    ) -> tuple[str, str]:
+        """Copy current server/local game files before revert deletes them.
+
+        Local: %APPDATA%/Civ4PBEMManager/backups/<game>/revert_YYYYMMDD_HHMMSS/
+        Remote (FTP): <game>/revert_YYYYMMDD_HHMMSS/
+        Returns (local_dir, remote_subdir_name_or_empty).
+        """
+        import datetime
+        import json
+        import time
+
+        from src.transport.base import game_remote_dir, sanitize_game_name
+
+        stamp = datetime.datetime.now().strftime("revert_%Y%m%d_%H%M%S")
+        local_dir = get_backups_dir(game.name) / stamp
+        try:
+            local_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            logger.exception("Cannot create backup dir")
+            return "", ""
+
+        names: list[str] = []
+        seen: set[str] = set()
+        for turn in game.history:
+            fn = (turn.filename or "").strip()
+            if fn and fn.casefold() not in seen:
+                names.append(fn)
+                seen.add(fn.casefold())
+        for extra in (
+            f"{game.name}_turns.json",
+            f"{game.name}_state.json",
+            f"{game.name}.config",
+        ):
+            if extra.casefold() not in seen:
+                names.append(extra)
+                seen.add(extra.casefold())
+
+        saved: list[str] = []
+        for name in names:
+            dest = local_dir / Path(name).name
+            data: Optional[bytes] = None
+            if transport:
+                retr = getattr(transport, "retr_bytes", None)
+                if callable(retr):
+                    try:
+                        data = retr(name, game.name)
+                    except Exception:
+                        logger.debug("backup RETR %s failed", name, exc_info=True)
+            if data is None and name.endswith(".CivBeyondSwordSave"):
+                local = find_save_file(
+                    name,
+                    self.config.save_path,
+                    self.config.get("civ4_save_path", ""),
+                    self.config.get("mirror_saves", True),
+                    game_name=game.name,
+                )
+                if local and local.is_file():
+                    try:
+                        data = local.read_bytes()
+                    except Exception:
+                        data = None
+            if data is None and name.endswith((".json", ".config")):
+                cache = get_games_dir() / name
+                if cache.is_file():
+                    try:
+                        data = cache.read_bytes()
+                    except Exception:
+                        data = None
+            if data is None:
+                continue
+            try:
+                dest.write_bytes(data)
+                saved.append(dest.name)
+            except Exception:
+                logger.exception("backup write %s", dest)
+                continue
+
+        # Always keep a JSON snapshot of history even if RETR failed
+        try:
+            snap = game.turns_log_dict()
+            snap["backup"] = {
+                "stamp": stamp,
+                "by_player": by_player,
+                "history_index": history_index,
+                "target_filename": (
+                    game.history[history_index].filename
+                    if 0 <= history_index < len(game.history) else ""
+                ),
+            }
+            snap_name = f"{game.name}_turns_snapshot.json"
+            (local_dir / snap_name).write_text(
+                json.dumps(snap, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            if snap_name not in saved:
+                saved.append(snap_name)
+        except Exception:
+            logger.exception("backup snapshot failed")
+
+        try:
+            manifest = {
+                "stamp": stamp,
+                "game": game.name,
+                "by_player": by_player,
+                "history_index": history_index,
+                "files": saved,
+                "created_at": time.time(),
+            }
+            (local_dir / "manifest.json").write_text(
+                json.dumps(manifest, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            if "manifest.json" not in saved:
+                saved.append("manifest.json")
+        except Exception:
+            logger.exception("backup manifesto failed")
+
+        remote_ok = 0
+        if transport and isinstance(transport, FTPTransport) and saved:
+            try:
+                game_name = sanitize_game_name(game.name)
+                base = game_remote_dir(transport.remote_dir, game_name).rstrip("/")
+                remote_subdir = f"{base}/{stamp}"
+                from src.ftp_curl import curl_put
+                for name in saved:
+                    local_file = local_dir / name
+                    if not local_file.is_file():
+                        continue
+                    ok, err = curl_put(
+                        host=transport.host,
+                        port=int(transport.port or 21),
+                        username=transport.username,
+                        password=transport.password,
+                        remote_path=f"{remote_subdir}/{name}",
+                        local_path=local_file,
+                        max_time=20,
+                        create_dirs=True,
+                    )
+                    if ok:
+                        remote_ok += 1
+                    else:
+                        logger.warning("backup FTP PUT %s: %s", name, err)
+            except Exception:
+                logger.exception("backup FTP upload failed")
+
+        logger.info(
+            "Revert backup %s: %d files local%s",
+            local_dir,
+            len(saved),
+            f", {remote_ok} on FTP" if remote_ok else "",
+        )
+        return str(local_dir), (stamp if remote_ok else "")
 
     def _cleanup_remote_after_revert(
         self,
         game: Game,
         transport: BaseTransport,
         keep_filename: str = "",
+        drop_filenames: Optional[list[str]] = None,
     ) -> int:
-        """Remove saves/flags on the server that are newer than reverted state."""
+        """Remove saves/flags on the server that are newer than reverted state.
+
+        Always DELE known post-revert filenames even when FTP LIST is empty —
+        otherwise rebuild-from-server puts those saves straight back.
+        """
         try:
-            remote_files = transport.list_files(game.name)
+            remote_files = list(transport.try_list_saves(game.name) or [])
         except Exception:
-            logger.exception("list_files during revert cleanup failed")
-            return 0
+            logger.exception("try_list_saves during revert cleanup failed")
+            remote_files = []
 
         keep_saves = {t.filename for t in game.history if t.filename}
         if keep_filename:
             keep_saves.add(keep_filename)
 
         target_seq = Game.parse_save_seq(keep_filename) if keep_filename else None
+        to_delete: set[str] = set()
 
-        deleted = 0
+        for name in (drop_filenames or []):
+            name = Path(str(name)).name
+            if name and name not in keep_saves:
+                to_delete.add(name)
+
         for name in remote_files:
             if not is_game_remote_file(game.name, name):
                 continue
-            remove = False
             if name.startswith(f"{game.name}_notify_") and name.endswith(".flag"):
-                remove = True
-            elif game.save_belongs_to_game(name):
-                if name in keep_saves:
-                    remove = False
-                elif target_seq is not None:
-                    seq = Game.parse_save_seq(name)
-                    # Drop anything newer than the save we reverted to
-                    remove = seq is None or seq > target_seq
-                else:
-                    remove = True
-            if remove and transport.delete(name, game.name):
+                to_delete.add(name)
+                continue
+            if not game.save_belongs_to_game(name):
+                continue
+            if name in keep_saves:
+                continue
+            if target_seq is not None:
+                seq = Game.parse_save_seq(name)
+                if seq is None or seq > target_seq:
+                    to_delete.add(name)
+            else:
+                to_delete.add(name)
+
+        deleted = 0
+        for name in sorted(to_delete):
+            if transport.delete(name, game.name):
                 deleted += 1
+            else:
+                logger.warning(
+                    "Revert cleanup could not delete %s: %s",
+                    name,
+                    getattr(transport, "last_error", ""),
+                )
         return deleted
 
     @staticmethod
@@ -1490,7 +1776,9 @@ class AppController(QObject):
         transport = self._create_transport_for_game(game)
         if not transport:
             return False, "Transport nie jest skonfigurowany"
-        self._upload_game_state_file(game, transport)
+        self._upload_game_state_file(
+            game, transport, repair_from_local_saves=False,
+        )
         ok, msg = self.upload_game_config(game)
         self.games_updated.emit()
         return ok, msg

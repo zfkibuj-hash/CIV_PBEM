@@ -194,6 +194,31 @@ class FTPTransport(BaseTransport):
         self.last_error = "NLST disabled — use named RETR"
         return []
 
+    def try_list_saves(self, game_name: str) -> list[str]:
+        """Timed curl LIST (not NLST). Empty if the server/listing hangs."""
+        from src.ftp_curl import curl_list
+
+        try:
+            game_name = sanitize_game_name(game_name)
+        except ValueError:
+            return []
+        remote = game_remote_dir(self.remote_dir, game_name)
+        names, err = curl_list(
+            host=self.host,
+            port=int(self.port or 21),
+            username=self.username,
+            password=self.password,
+            remote_dir=remote,
+            max_time=12,
+        )
+        if err:
+            self.last_error = err
+            return []
+        return [
+            n for n in normalize_remote_listing(names)
+            if n.endswith(".CivBeyondSwordSave")
+        ]
+
     def fetch_turns_log_bytes(self, game_name: str) -> Optional[bytes]:
         return self.retr_bytes(f"{sanitize_game_name(game_name)}_turns.json", game_name)
 
@@ -288,8 +313,29 @@ class FTPTransport(BaseTransport):
         return self.retr_bytes(remote_filename, game_name) is not None
 
     def delete(self, remote_filename: str, game_name: str) -> bool:
-        self.last_error = "delete via curl not implemented"
-        return False
+        from src.ftp_curl import curl_delete
+
+        try:
+            remote_filename = sanitize_filename(remote_filename)
+            game_name = sanitize_game_name(game_name)
+        except ValueError as e:
+            self.last_error = str(e)
+            return False
+        remote = game_remote_dir(self.remote_dir, game_name)
+        ok, err = curl_delete(
+            host=self.host,
+            port=int(self.port or 21),
+            username=self.username,
+            password=self.password,
+            remote_dir=remote,
+            filename=remote_filename,
+            max_time=8,
+        )
+        if not ok:
+            self.last_error = err or "delete failed"
+            logger.warning("FTP DELE %s: %s", remote_filename, self.last_error)
+            return False
+        return True
 
     def _ensure_dir(self, ftp: ftplib.FTP, path: str):
         current = ""
