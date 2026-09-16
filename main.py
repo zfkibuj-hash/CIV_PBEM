@@ -322,6 +322,7 @@ def main():
         )]
 
     watcher = SaveFileWatcher(_watch_paths(), parent=window)
+    _upload_prompt_busy = {"name": ""}
 
     def on_new_save_detected(filepath: str):
         """Handle a new save file detected by watchdog.
@@ -361,6 +362,15 @@ def main():
             window.status_label.setText(t("checking_saves"))
             return
 
+        # One modal at a time — created+modified used to stack two Yes/No dialogs.
+        key = filename.casefold()
+        if _upload_prompt_busy["name"]:
+            logger.info(
+                "Ignoring duplicate upload prompt for %s (busy with %s)",
+                filename, _upload_prompt_busy["name"],
+            )
+            return
+
         auto_send = config.get("auto_send", False)
 
         if auto_send:
@@ -377,13 +387,18 @@ def main():
                 window.show()
                 window.activateWindow()
 
-            reply = QMessageBox.question(
-                window,
-                t("new_save_dialog_title"),
-                t("new_save_dialog_text", filename=filename, game=matched_game.name),
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
+            _upload_prompt_busy["name"] = key
+            try:
+                reply = QMessageBox.question(
+                    window,
+                    t("new_save_dialog_title"),
+                    t("new_save_dialog_text", filename=filename, game=matched_game.name),
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes,
+                )
+            finally:
+                _upload_prompt_busy["name"] = ""
+
             if reply == QMessageBox.Yes:
                 success, msg = controller.upload_save(matched_game, Path(filepath))
                 window.status_label.setText(msg)

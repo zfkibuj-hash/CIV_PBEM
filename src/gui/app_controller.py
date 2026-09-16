@@ -287,6 +287,11 @@ class AppController(QObject):
             )
             if local_path.exists():
                 self._mirror_save(local_path, game.name, watcher)
+                try:
+                    if game.apply_save_meta_from_path(local_path):
+                        game.save_to_file(get_games_dir(), self.config.master_password)
+                except Exception:
+                    logger.debug("meta sync on existing save failed", exc_info=True)
                 return True, t("save_exists", filename=latest), False
 
             self.status_changed.emit(
@@ -297,6 +302,11 @@ class AppController(QObject):
 
             if transport.download(latest, local_path, game.name):
                 self._mirror_save(local_path, game.name, watcher)
+                try:
+                    if game.apply_save_meta_from_path(local_path):
+                        game.save_to_file(get_games_dir(), self.config.master_password)
+                except Exception:
+                    logger.debug("meta sync after download failed", exc_info=True)
                 return True, t("downloaded", filename=latest), True
             return False, t("download_error"), False
         finally:
@@ -480,18 +490,30 @@ class AppController(QObject):
             logger.info("Duplicate upload ignored: %s", remote_filename)
             return True, f"Juz wyslano: {remote_filename}"
 
-        ok, err_key = game.validate_upload_filename(local_path.name, my_name)
+        ok, err_key = game.validate_upload_file(local_path, my_name)
         if not ok:
-            if err_key in ("upload_wrong_leader", "upload_need_civ4_leader"):
+            if err_key in (
+                "upload_wrong_leader",
+                "upload_need_civ4_leader",
+                "upload_midturn_content",
+            ):
                 nxt = game.next_player
+                me = game.get_my_player(my_name) or game.current_player
                 leader = (nxt.civ4_leader or nxt.name) if nxt else "?"
-                return False, t(err_key, leader=leader)
+                active = (me.civ4_leader or me.name) if me else "?"
+                return False, t(err_key, leader=leader, active=active, next=leader)
             if err_key == "upload_not_your_turn":
                 return False, t(
                     err_key,
                     name=game.current_player.name if game.current_player else "?",
                 )
             return False, t(err_key)
+
+        # Sync calendar speed from the Civ4 binary (fixes wrong Normal vs Quick).
+        try:
+            game.apply_save_meta_from_path(local_path)
+        except Exception:
+            logger.debug("apply_save_meta_from_path failed", exc_info=True)
 
         # For email transport in individual mode, pass the next player's email
         next_player = game.next_player

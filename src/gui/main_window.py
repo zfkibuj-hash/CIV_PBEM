@@ -17,7 +17,6 @@ from PySide6.QtGui import QAction, QColor
 from src.config import AppConfig, version_label
 from src.models.game import Game, Player
 from src.i18n import t
-from src.models.turn_calendar import turn_to_year_str
 from src.models.statistics import format_duration
 from src.launcher import launch_civ4, is_civ4_running
 from src.saves import find_save_file, iter_save_dirs, latest_game_save
@@ -71,9 +70,11 @@ class MainWindow(QMainWindow):
         self._load_games()
         self._setup_timer()
 
-    def check_for_updates(self, *, manual: bool = False) -> None:
+    def check_for_updates(
+        self, *, manual: bool = False, dialog_parent=None,
+    ) -> None:
         """Run GitHub release check (startup or Settings → Check now)."""
-        self._update_flow.start_check(manual=manual)
+        self._update_flow.start_check(manual=manual, dialog_parent=dialog_parent)
 
     def apply_theme(self):
         """Apply dark or light theme based on config."""
@@ -451,29 +452,30 @@ class MainWindow(QMainWindow):
         self.game_list.clear()
         my_name = self.config.player_name
         for game in self.games:
-            year_str = turn_to_year_str(game.current_turn, game.game_speed)
+            cal_turn = game.calendar_turn()
+            year_str = game.calendar_year_str()
             if not game.history:
                 text = (
-                    f"   {game.name} [{t('turn')} {game.current_turn}, {year_str}]\n"
+                    f"   {game.name} [{t('turn')} {cal_turn}, {year_str}]\n"
                     f"   {t('game_list_needs_sync')}"
                 )
                 item = QListWidgetItem(text)
                 item.setForeground(QColor("#ef5350"))
             elif game.is_finished:
                 text = (
-                    f"   {game.name} [{t('turn')} {game.current_turn}, {year_str}]\n"
+                    f"   {game.name} [{t('turn')} {cal_turn}, {year_str}]\n"
                     f"   {t('game_list_winner', player=game.winner)}"
                 )
                 item = QListWidgetItem(text)
                 item.setForeground(QColor("#ffd54f"))
             elif game.is_my_turn(my_name):
-                text = f">> {game.name} [{t('turn')} {game.current_turn}, {year_str}]\n   {t('your_turn')}"
+                text = f">> {game.name} [{t('turn')} {cal_turn}, {year_str}]\n   {t('your_turn')}"
                 item = QListWidgetItem(text)
                 item.setForeground(QColor("#66bb6a"))
             else:
                 cp = game.current_player
                 who = cp.name if cp else "?"
-                text = f"   {game.name} [{t('turn')} {game.current_turn}, {year_str}]\n   {t('waiting')}: {who}"
+                text = f"   {game.name} [{t('turn')} {cal_turn}, {year_str}]\n   {t('waiting')}: {who}"
                 item = QListWidgetItem(text)
             self.game_list.addItem(item)
 
@@ -490,9 +492,30 @@ class MainWindow(QMainWindow):
         if not game:
             return
 
+        # Refresh Civ4 turn/year from the newest local handoff save when possible.
+        try:
+            from src.civ4_save_info import find_latest_game_save
+            from src.saves import iter_save_dirs
+            from src.config import get_games_dir
+            dirs = list(
+                iter_save_dirs(
+                    self.config.save_path,
+                    self.config.get("civ4_save_path", ""),
+                    self.config.get("mirror_saves", True),
+                )
+            )
+            latest = find_latest_game_save(game.name, dirs)
+            if latest and game.apply_save_meta_from_path(latest):
+                game.save_to_file(get_games_dir(), self.config.master_password)
+        except Exception:
+            pass
+
         my_name = self.config.player_name
 
-        self.header_label.setText(f"{game.name}  -  {t('turn')} {game.current_turn} ({turn_to_year_str(game.current_turn, game.game_speed)})")
+        self.header_label.setText(
+            f"{game.name}  -  {t('turn')} {game.calendar_turn()} "
+            f"({game.calendar_year_str()})"
+        )
 
         # Empty history = never synced from FTP. Default index 0 looks like
         # "YOUR TURN" after import — that is a lie until Check fills history.
@@ -632,7 +655,8 @@ class MainWindow(QMainWindow):
         )
 
         if show_pending:
-            year_str = turn_to_year_str(game.current_turn, game.game_speed)
+            year_str = game.calendar_year_str()
+            cal_turn = game.calendar_turn()
             last = game.history[-1]
             mine_tag = f"  {t('choose_save_can_download')}" if current.name == my_game_name else ""
             from_name, to_name = game.save_route(incoming)
@@ -643,7 +667,7 @@ class MainWindow(QMainWindow):
             text = (
                 f"{t('history_pending_prefix')}  "
                 f"{t('save_route', from_name=from_name, to_name=to_name)}  "
-                f"{t('turn')} {game.current_turn} ({year_str})  "
+                f"{t('turn')} {cal_turn} ({year_str})  "
                 f"[{incoming}]{mine_tag}"
             )
             item = QListWidgetItem(text)
@@ -659,7 +683,8 @@ class MainWindow(QMainWindow):
 
             import datetime
             dt = datetime.datetime.fromtimestamp(turn.timestamp)
-            year_str = turn_to_year_str(turn.turn_number, game.game_speed)
+            year_str = game.calendar_year_str(turn.turn_number)
+            cal_turn = game.calendar_turn(turn.turn_number)
             mine_tag = ""
             if game.is_save_for_player(turn.filename, my_name):
                 mine_tag = f"  {t('choose_save_can_download')}"
@@ -669,7 +694,7 @@ class MainWindow(QMainWindow):
             text = (
                 f"{dt.strftime('%d.%m %H:%M')}  "
                 f"{t('save_route', from_name=from_name, to_name=to_name)}  "
-                f"{t('turn')} {turn.turn_number} ({year_str})  [{turn.filename}]"
+                f"{t('turn')} {cal_turn} ({year_str})  [{turn.filename}]"
                 f"{mine_tag}"
             )
             item = QListWidgetItem(text)
@@ -1321,14 +1346,22 @@ class MainWindow(QMainWindow):
     def _on_settings(self):
         """Open settings dialog."""
         dialog = SettingsDialog(self.config, self)
-        dialog.check_updates_requested.connect(
-            lambda: self.check_for_updates(manual=True),
-        )
+        # Run the check after Settings closes so we never nest a modal update
+        # dialog under Settings.exec() (that combination crashed on Windows).
+        pending_update_check = {"go": False}
+
+        def _request_check():
+            pending_update_check["go"] = True
+
+        dialog.check_updates_requested.connect(_request_check)
         if dialog.exec() == QDialog.Accepted:
             self.apply_theme()
             # Refresh UI labels for new language
             self._refresh_ui_language()
             self.settings_saved.emit()
+        if pending_update_check["go"]:
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self.check_for_updates(manual=True))
 
     def _refresh_ui_language(self):
         """Update all UI text labels after language change."""

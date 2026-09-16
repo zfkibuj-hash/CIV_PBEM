@@ -147,10 +147,17 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 
 ## Changelog
 
+### v5.0.15
+
+**Watchdog: one upload prompt per save**
+- Waits until the Civ4 save file size is stable before asking to upload
+- Cooldown + single dialog so `created`/`modified` bursts no longer double-prompt
+- Download ignore lasts the full TTL and matches by filename (OneDrive / mirror folders)
+
 ### v5.0.14
 
 **Safer dates, mid-turn reject, update-check fix**
-- Reads **game speed** (and turn) from the Civ4 save binary on upload / Edit Game
+- Reads **game speed** and **Civ4 game turn** from the save binary (year calendar matches Civ4)
 - Rejects uploads where the next player is not `turnActive` yet (mid-turn save)
 - **Check now** no longer crashes: settings close first, then the GitHub check runs
 
@@ -321,9 +328,14 @@ Aplikacja jest **koordynatorem**, nie klientem gry.
 
 Uwagi: działa tylko na `.exe` z Releases (nie przy `python main.py`). Jeśli masz ≤5.0.12 — raz zainstaluj **5.0.13+ ręcznie**. Potrzebny dostęp do `github.com`.
 
+### Co nowego w v5.0.15
+
+- Watchdog czeka az save sie dopisze — jedno pytanie o upload (bez dublowania)
+- Ignore po downloadzie dziala tez po nazwie (OneDrive / mirror)
+
 ### Co nowego w v5.0.14
 
-- Odczyt **prędkości gry** z save'a Civ4 (daty / lata)
+- Odczyt **prędkości gry** i tury Civ4 z save'a (daty / lata)
 - Odrzut mid-turn save (gdy w środku nadal aktywny poprzedni gracz)
 - **Sprawdź teraz** nie crashuje (najpierw zamyka Ustawienia)
 

@@ -433,6 +433,10 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Brak mapowania lidera Civ4 dla nastepnego gracza (oczekiwany: {leader}). Edytuj gre → ustaw liderow (Alexander, Frederick, …). Bez tego Manager nie odrzuci save'a sprzed End Turn.",
         "en": "Next player has no Civ4 leader mapping (expected: {leader}). Edit Game → set leaders (Alexander, Frederick, …). Without that the Manager cannot reject a mid-turn save.",
     },
+    "upload_midturn_content": {
+        "pl": "W srodku save'a nadal aktywna jest tura {active}, a nie {next}. W Civ4: End Turn → haslo nastepnego gracza → Save, dopiero potem Upload.",
+        "en": "Inside the save, {active}'s turn is still active — not {next}. In Civ4: End Turn → next player's password → Save, then Upload.",
+    },
     "upload_native_no_to": {
         "pl": "Nierozpoznana nazwa save'a Civ4 (brak _to_).",
         "en": "Unrecognized Civ4 save name (missing _to_).",

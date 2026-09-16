@@ -324,6 +324,15 @@ class EditGameDialog(QDialog):
             QMessageBox.warning(self, t("error"), t("civ4_leaders_parse_fail"))
             return
         self._apply_save_info(info)
+        try:
+            if self.game.apply_save_meta_from_path(path):
+                # Refresh speed combo if present
+                if hasattr(self, "speed_combo"):
+                    idx = self.speed_combo.findData(self.game.game_speed)
+                    if idx >= 0:
+                        self.speed_combo.setCurrentIndex(idx)
+        except Exception:
+            pass
 
     def _pick_color(self, btn: QPushButton, player_name: str):
         """Open color picker for a player."""

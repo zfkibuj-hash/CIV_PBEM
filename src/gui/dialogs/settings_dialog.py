@@ -1085,10 +1085,15 @@ class SettingsDialog(QDialog):
             self._apply_save_layout(path)
 
     def _on_check_update_now(self):
-        """Ask the main window / host to run a manual update check."""
-        # Persist checkbox so a following check uses the latest preference.
-        self.config.set("auto_update_check", self.auto_update_check.isChecked())
+        """Save settings, close, then let the main window run the update check."""
+        name = self.player_name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, t("error"), t("wizard_name_required"))
+            return
+        # Flag the host before accept() so the check runs after Settings closes
+        # (nested modals under Settings.exec crashed on Windows).
         self.check_updates_requested.emit()
+        self._save_settings()
 
     def _rerun_setup_wizard(self):
         """Re-open the first-run wizard from Settings."""

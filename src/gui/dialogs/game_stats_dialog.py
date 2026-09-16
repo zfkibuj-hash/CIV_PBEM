@@ -93,7 +93,7 @@ class GameStatsDialog(QDialog):
         stats = calculate_game_stats(self.game)
         round_text = (
             f"{stats.current_round} "
-            f"({turn_to_year_str(stats.current_round, self.game.game_speed)})"
+            f"({turn_to_year_str(self.game.calendar_turn(stats.current_round), self.game.game_speed)})"
         )
         values = {
             "stats_game_started": stats.game_started_formatted,

@@ -5,12 +5,11 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import QThread, Qt
+from PySide6.QtCore import QThread, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QMessageBox, QProgressDialog
-from PySide6.QtCore import QUrl
+from PySide6.QtWidgets import QMessageBox, QProgressDialog, QWidget
 
-from src.config import APP_VERSION, version_label
+from src.config import version_label
 from src.gui.update_worker import UpdateCheckWorker, UpdateDownloadWorker
 from src.i18n import t
 from src.updater import (
@@ -23,7 +22,6 @@ from src.updater import (
 
 if TYPE_CHECKING:
     from src.config import AppConfig
-    from PySide6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -31,24 +29,41 @@ logger = logging.getLogger(__name__)
 class UpdateFlow:
     """Owns QThreads for update check/download; parent widget must outlive the flow."""
 
-    def __init__(self, parent: "QWidget", config: "AppConfig"):
+    def __init__(self, parent: QWidget, config: "AppConfig"):
         self._parent = parent
         self._config = config
         self._thread: Optional[QThread] = None
         self._worker = None
         self._manual = False
         self._busy = False
+        self._msg_parent: Optional[QWidget] = None
 
     @property
     def busy(self) -> bool:
         return self._busy
 
-    def start_check(self, *, manual: bool = False) -> None:
+    def _ui_parent(self) -> QWidget:
+        p = self._msg_parent
+        if p is not None:
+            try:
+                if p.isVisible():
+                    return p
+            except RuntimeError:
+                pass
+        return self._parent
+
+    def start_check(
+        self,
+        *,
+        manual: bool = False,
+        dialog_parent: Optional[QWidget] = None,
+    ) -> None:
         if self._busy:
             return
+        self._msg_parent = dialog_parent
         if manual and not is_frozen_exe():
             QMessageBox.information(
-                self._parent, t("auto_update_group"), t("auto_update_dev_only"),
+                self._ui_parent(), t("auto_update_group"), t("auto_update_dev_only"),
             )
             return
         if not is_frozen_exe():
@@ -61,9 +76,11 @@ class UpdateFlow:
         worker = UpdateCheckWorker(skipped_version=skipped)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.update_available.connect(self._on_available)
-        worker.up_to_date.connect(self._on_up_to_date)
-        worker.failed.connect(self._on_check_failed)
+        # Defer UI to next event-loop tick so worker/thread teardown cannot
+        # race with nested modal dialogs (e.g. Settings still open).
+        worker.update_available.connect(self._queue_available)
+        worker.up_to_date.connect(self._queue_up_to_date)
+        worker.failed.connect(self._queue_check_failed)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
@@ -77,60 +94,80 @@ class UpdateFlow:
         self._thread = None
         self._worker = None
 
+    def _queue_available(self, info: object) -> None:
+        QTimer.singleShot(0, lambda: self._on_available(info))
+
+    def _queue_up_to_date(self) -> None:
+        QTimer.singleShot(0, self._on_up_to_date)
+
+    def _queue_check_failed(self, error: str) -> None:
+        QTimer.singleShot(0, lambda: self._on_check_failed(error))
+
     def _on_up_to_date(self) -> None:
-        if self._manual:
+        if not self._manual:
+            return
+        try:
             QMessageBox.information(
-                self._parent,
+                self._ui_parent(),
                 t("auto_update_group"),
                 t("auto_update_up_to_date", version=version_label()),
             )
+        except Exception:
+            logger.exception("up-to-date dialog failed")
 
     def _on_check_failed(self, error: str) -> None:
         if self._manual:
-            QMessageBox.warning(
-                self._parent,
-                t("auto_update_group"),
-                t("auto_update_failed", error=error),
-            )
+            try:
+                QMessageBox.warning(
+                    self._ui_parent(),
+                    t("auto_update_group"),
+                    t("auto_update_failed", error=error or "?"),
+                )
+            except Exception:
+                logger.exception("update-failed dialog failed")
         else:
             logger.info("Silent update check failed: %s", error)
 
     def _on_available(self, info: object) -> None:
-        release = info  # ReleaseInfo
-        assert isinstance(release, ReleaseInfo)
-        notes = truncate_release_notes(release.body)
-        box = QMessageBox(self._parent)
-        box.setIcon(QMessageBox.Information)
-        box.setWindowTitle(t("auto_update_available_title"))
-        box.setText(
-            t(
-                "auto_update_available_text",
-                local=version_label(),
-                remote=release.tag,
-                notes=notes or release.name,
+        try:
+            if not isinstance(info, ReleaseInfo):
+                return
+            release = info
+            notes = truncate_release_notes(release.body)
+            box = QMessageBox(self._ui_parent())
+            box.setIcon(QMessageBox.Information)
+            box.setWindowTitle(t("auto_update_available_title"))
+            box.setText(
+                t(
+                    "auto_update_available_text",
+                    local=version_label(),
+                    remote=release.tag,
+                    notes=notes or release.name,
+                )
             )
-        )
-        btn_dl = box.addButton(t("auto_update_download"), QMessageBox.AcceptRole)
-        btn_skip = box.addButton(t("auto_update_skip"), QMessageBox.RejectRole)
-        btn_web = box.addButton(t("auto_update_open_browser"), QMessageBox.ActionRole)
-        box.exec()
-        clicked = box.clickedButton()
-        if clicked is btn_web:
-            QDesktopServices.openUrl(QUrl(release.html_url))
-            return
-        if clicked is btn_skip or clicked is None:
-            self._config.set("skipped_update_version", release.version)
-            self._config.save()
-            return
-        if clicked is btn_dl:
-            self._start_download(release)
+            btn_dl = box.addButton(t("auto_update_download"), QMessageBox.AcceptRole)
+            btn_skip = box.addButton(t("auto_update_skip"), QMessageBox.RejectRole)
+            btn_web = box.addButton(t("auto_update_open_browser"), QMessageBox.ActionRole)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is btn_web:
+                QDesktopServices.openUrl(QUrl(release.html_url))
+                return
+            if clicked is btn_skip or clicked is None:
+                self._config.set("skipped_update_version", release.version)
+                self._config.save()
+                return
+            if clicked is btn_dl:
+                self._start_download(release)
+        except Exception:
+            logger.exception("update-available dialog failed")
 
     def _start_download(self, release: ReleaseInfo) -> None:
         if self._busy:
             return
         self._busy = True
         progress = QProgressDialog(
-            t("auto_update_downloading"), None, 0, 0, self._parent,
+            t("auto_update_downloading"), None, 0, 0, self._ui_parent(),
         )
         progress.setWindowTitle(t("auto_update_group"))
         progress.setWindowModality(Qt.WindowModal)
@@ -145,15 +182,19 @@ class UpdateFlow:
 
         def _ok(path: str) -> None:
             progress.close()
-            self._apply_update(Path(path))
+            QTimer.singleShot(0, lambda: self._apply_update(Path(path)))
 
         def _fail(err: str) -> None:
             progress.close()
-            QMessageBox.warning(
-                self._parent,
-                t("auto_update_group"),
-                t("auto_update_download_failed", error=err),
-            )
+
+            def _show() -> None:
+                QMessageBox.warning(
+                    self._ui_parent(),
+                    t("auto_update_group"),
+                    t("auto_update_download_failed", error=err),
+                )
+
+            QTimer.singleShot(0, _show)
 
         def _done() -> None:
             self._busy = False
@@ -174,7 +215,7 @@ class UpdateFlow:
         cur = current_exe_path()
         if not cur:
             QMessageBox.information(
-                self._parent, t("auto_update_group"), t("auto_update_dev_only"),
+                self._ui_parent(), t("auto_update_group"), t("auto_update_dev_only"),
             )
             return
         try:
@@ -182,7 +223,7 @@ class UpdateFlow:
         except Exception as e:
             logger.exception("schedule_replace_and_restart failed")
             QMessageBox.warning(
-                self._parent,
+                self._ui_parent(),
                 t("auto_update_group"),
                 t("auto_update_download_failed", error=str(e)),
             )
@@ -191,7 +232,7 @@ class UpdateFlow:
         self._config.set("skipped_update_version", "")
         self._config.save()
         QMessageBox.information(
-            self._parent,
+            self._ui_parent(),
             t("auto_update_group"),
             t("auto_update_restarting"),
         )

@@ -98,6 +98,9 @@ class Game:
     player_claims: dict = field(default_factory=dict)
     # Game speed: determines turn-to-year mapping (quick/normal/epic/marathon)
     game_speed: str = "normal"
+    # Civ4 InitCore game_turn from the latest handoff save (year calendar).
+    # Manager ``current_turn`` is the PBEM round counter and can be ahead by 1+.
+    civ4_game_turn: Optional[int] = None
     # Timestamp of last reminder sent (to avoid spamming)
     last_reminder_sent: float = 0.0
     # Player colors for history display (player_name -> hex color)
@@ -118,6 +121,24 @@ class Game:
         if not self.players:
             return None
         return self.players[self.current_player_index]
+
+    @property
+    def civ_turn_offset(self) -> int:
+        """Manager current_turn minus Civ4 game_turn (usually 0 or 1)."""
+        if self.civ4_game_turn is None:
+            return 0
+        return int(self.current_turn or 0) - int(self.civ4_game_turn)
+
+    def calendar_turn(self, manager_turn: Optional[int] = None) -> int:
+        """Turn number for year display (Civ4), mapped from a Manager round."""
+        mt = int(self.current_turn or 0) if manager_turn is None else int(manager_turn)
+        if self.civ4_game_turn is None:
+            return max(0, mt)
+        return max(0, mt - self.civ_turn_offset)
+
+    def calendar_year_str(self, manager_turn: Optional[int] = None) -> str:
+        from src.models.turn_calendar import turn_to_year_str
+        return turn_to_year_str(self.calendar_turn(manager_turn), self.game_speed)
 
     @property
     def next_player(self) -> Optional[Player]:
@@ -713,6 +734,8 @@ class Game:
         self.save_seq = max(int(remote.save_seq or 0), int(self.save_seq or 0))
         if remote.game_speed:
             self.game_speed = remote.game_speed
+        if remote.civ4_game_turn is not None:
+            self.civ4_game_turn = remote.civ4_game_turn
         self.merge_player_emails(remote.players)
         self.merge_player_status(remote.players)
         self.apply_remote_claims(getattr(remote, "player_claims", None) or {})
@@ -988,6 +1011,53 @@ class Game:
             return False, "upload_unrecognized_name"
 
         return False, "upload_not_this_game"
+
+    def validate_upload_file(
+        self, path: Path | str, local_player_name: str,
+    ) -> tuple[bool, str]:
+        """Filename checks plus binary mid-turn / speed meta when readable."""
+        path = Path(path)
+        ok, key = self.validate_upload_filename(path.name, local_player_name)
+        if not ok:
+            return ok, key
+
+        nxt = self.next_player
+        me = self.get_my_player(local_player_name) or self.current_player
+        if not nxt or not me:
+            return True, ""
+
+        try:
+            from src.civ4_save_info import parse_civ4_save_meta
+            meta = parse_civ4_save_meta(path)
+        except Exception:
+            return True, ""
+        if not meta:
+            return True, ""
+
+        sender_leader = (me.civ4_leader or "").strip() or me.name
+        recipient_leader = (nxt.civ4_leader or "").strip() or nxt.name
+        mid = meta.is_midturn_handoff(sender_leader, recipient_leader)
+        if mid is True:
+            return False, "upload_midturn_content"
+        return True, ""
+
+    def apply_save_meta_from_path(self, path: Path | str) -> bool:
+        """Update ``game_speed`` / ``civ4_game_turn`` from a Civ4 save."""
+        try:
+            from src.civ4_save_info import parse_civ4_save_meta
+            meta = parse_civ4_save_meta(path)
+        except Exception:
+            return False
+        if not meta:
+            return False
+        changed = False
+        if meta.game_speed and self.game_speed != meta.game_speed:
+            self.game_speed = meta.game_speed
+            changed = True
+        if meta.game_turn is not None and self.civ4_game_turn != meta.game_turn:
+            self.civ4_game_turn = int(meta.game_turn)
+            changed = True
+        return changed
 
     @staticmethod
     def match_save_to_game(filename: str, games: list["Game"]) -> Optional["Game"]:
@@ -1396,6 +1466,7 @@ class Game:
             "local_player_alias": self.local_player_alias,
             "player_claims": self.player_claims,
             "game_speed": self.game_speed,
+            "civ4_game_turn": self.civ4_game_turn,
             "last_reminder_sent": self.last_reminder_sent,
             "player_colors": self.player_colors,
             "history_color_mode": self.history_color_mode,
@@ -1420,6 +1491,7 @@ class Game:
             "local_player_alias": self.local_player_alias,
             "player_claims": self.player_claims,
             "game_speed": self.game_speed,
+            "civ4_game_turn": self.civ4_game_turn,
             "last_reminder_sent": self.last_reminder_sent,
             "player_colors": self.player_colors,
             "history_color_mode": self.history_color_mode,
@@ -1449,6 +1521,11 @@ class Game:
             local_player_alias=data.get("local_player_alias", ""),
             player_claims=data.get("player_claims") or {},
             game_speed=data.get("game_speed", "normal"),
+            civ4_game_turn=(
+                int(data["civ4_game_turn"])
+                if data.get("civ4_game_turn") is not None
+                else None
+            ),
             last_reminder_sent=data.get("last_reminder_sent", 0.0),
             player_colors=data.get("player_colors", {}),
             history_color_mode=data.get("history_color_mode", "all"),
