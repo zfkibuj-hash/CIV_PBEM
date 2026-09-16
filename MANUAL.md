@@ -48,6 +48,17 @@ Przycisk **"Ustawienia"** w lewym sidebar. Trzy zakladki:
 | **Auto-wyslij save** | Gdy ON: watchdog automatycznie wysle nowy save bez pytania (dla gry fullscreen) |
 | **Jezyk / Language** | Polski / English — przelacza caly interfejs w runtime |
 | **Sciezka do Civ4 BTS** | Sciezka do `Civ4BeyondSword.exe`. Potrzebna dla przycisku "Uruchom Civ4" |
+| **Aktualizacje** | Sprawdzaj przy starcie + przycisk **Sprawdz teraz** (tylko zbudowany `.exe`) |
+
+#### Aktualizacje (Check for updates)
+
+1. Ustawienia → sekcja **Aktualizacje**
+2. Kliknij **Sprawdz teraz** (albo zostaw wlaczone sprawdzanie przy starcie)
+3. Ustawienia sie zamykaja, Manager pyta GitHub o nowszy release
+4. Wybierz: pobierz i zainstaluj / nie teraz / otworz w przegladarce
+5. Po instalacji aplikacja restartuje sie sama
+
+Dziala tylko na `Civ4PBEMManager.exe` z [Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases/latest). Przy `python main.py` updater jest wylaczony.
 
 #### Ustawianie sciezki Civ4:
 - **Wykryj automatycznie** — szuka w typowych lokalizacjach (Steam, GOG, standardowe)

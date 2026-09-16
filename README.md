@@ -71,7 +71,22 @@ This is important. The app is a **coordinator**, not a game client.
 
 **Windows .exe** is available in [Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases/latest) — no Python installation needed.
 
-Download `Civ4PBEMManager.exe` from the latest release and run it. From **v5.0.13** onward the app can self-update when a newer release appears (Settings → Updates).
+Download `Civ4PBEMManager.exe` from the latest release and run it.
+
+### How to check for updates (built `.exe`)
+
+1. Open **Settings** (left sidebar).
+2. In the **Updates** / **Aktualizacje** group:
+   - leave **Check for updates on startup** on (recommended), and/or
+   - click **Check now** / **Sprawdź teraz**.
+3. Settings closes, then the app talks to [GitHub Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases/latest).
+4. If a newer version exists you can **Download and install**, **Not now** (skip this version), or **Open in browser**.
+5. After install the Manager restarts by itself.
+
+Notes:
+- Self-update works only with the frozen Windows `.exe` from Releases — not when running `python main.py`.
+- First jump onto the updater: install **5.0.13+ once by hand** if you are still on 5.0.12 or older.
+- Need internet access to `api.github.com` / `github.com`.
 
 1. Run the app → **Settings → General**
 2. Set your player name, email, save folder path
@@ -132,13 +147,20 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 
 ## Changelog
 
+### v5.0.14
+
+**Safer dates, mid-turn reject, update-check fix**
+- Reads **game speed** (and turn) from the Civ4 save binary on upload / Edit Game
+- Rejects uploads where the next player is not `turnActive` yet (mid-turn save)
+- **Check now** no longer crashes: settings close first, then the GitHub check runs
+
 ### v5.0.13
 
 **Auto-update**
 - On startup (frozen `.exe` only) checks [GitHub Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases) for a newer version
 - Dialog: download & install / skip this version / open in browser
 - Clears Windows Mark-of-the-Web after download, replaces the running exe, restarts
-- Settings: enable/disable + **Check now**
+- Settings: enable/disable + **Check now** (see [How to check for updates](#how-to-check-for-updates-built-exe))
 - Install **5.0.13 once by hand** if you are still on 5.0.12 (older builds have no updater)
 
 ### v5.0.12
@@ -287,11 +309,30 @@ Aplikacja jest **koordynatorem**, nie klientem gry.
 4. Eksportuj `.civ4pbem` **albo skopiuj kod zaproszenia** i wyślij innym graczom
 5. Graj turę → watchdog automatycznie wyśle save i powiadomi następnego gracza
 
+### Jak sprawdzić aktualizację (zbudowany `.exe`)
+
+1. **Ustawienia** (lewy sidebar).
+2. Sekcja **Aktualizacje**:
+   - włącz **Sprawdzaj aktualizacje przy starcie** i/lub
+   - kliknij **Sprawdź teraz**.
+3. Okno ustawień się zamyka, Manager łączy się z [GitHub Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases/latest).
+4. Przy nowszej wersji: **Pobierz i zainstaluj** / **Nie teraz** / **Otwórz w przeglądarce**.
+5. Po instalacji Manager sam się uruchomi ponownie.
+
+Uwagi: działa tylko na `.exe` z Releases (nie przy `python main.py`). Jeśli masz ≤5.0.12 — raz zainstaluj **5.0.13+ ręcznie**. Potrzebny dostęp do `github.com`.
+
+### Co nowego w v5.0.14
+
+- Odczyt **prędkości gry** z save'a Civ4 (daty / lata)
+- Odrzut mid-turn save (gdy w środku nadal aktywny poprzedni gracz)
+- **Sprawdź teraz** nie crashuje (najpierw zamyka Ustawienia)
+
 ### Co nowego w v5.0.13
 
 - **Auto-aktualizacja** z GitHub Releases (tylko zbudowany `.exe`)
 - Dialog: pobierz i zainstaluj / nie teraz / otworz w przegladarce
 - Ustawienia → Aktualizacje; raz zainstaluj 5.0.13 recznie, jesli masz jeszcze 5.0.12
+- Szczegoly: [Jak sprawdzic aktualizacje](#jak-sprawdzić-aktualizację-zbudowany-exe)
 
 ### Co nowego w v5.0.12
 
