@@ -147,6 +147,29 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 
 ## Changelog
 
+### v5.0.19
+
+**Check now: show result / clear status**
+- curl already reached GitHub in ~0.3s, but the “Checking…” status could stick forever when you were already newer than the latest GitHub release
+- Result dialog is shown via a GUI-thread bridge; status always clears
+
+### v5.0.18
+
+**Check now: use curl like FTP**
+- GitHub release check/download via `curl.exe` (urllib SSL was hanging inside the frozen `.exe`)
+- Status bar + timeout kept from 5.0.17 (no modal freeze)
+
+### v5.0.17
+
+**Check now: no freeze**
+- Dropped the modal “Checking…” dialog (it could lock the whole app if GitHub stalled)
+- Status bar text + 12s UI timeout instead; result dialog still delayed so it does not flash
+
+### v5.0.16
+
+**Check now: readable update dialog** *(superseded by 5.0.17)*
+- Tried a stable “Checking…” window — could freeze the UI; use 5.0.17+
+
 ### v5.0.15
 
 **Watchdog: one upload prompt per save**

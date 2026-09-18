@@ -738,6 +738,14 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Sprawdz teraz",
         "en": "Check now",
     },
+    "auto_update_checking": {
+        "pl": "Sprawdzam aktualizacje na GitHub…",
+        "en": "Checking GitHub for updates…",
+    },
+    "auto_update_timeout": {
+        "pl": "Sprawdzanie aktualizacji trwa zbyt dlugo (siec / GitHub).\nSprobuj ponownie albo pobierz .exe z Releases recznie.",
+        "en": "Update check timed out (network / GitHub).\nTry again or download the .exe from Releases manually.",
+    },
     "auto_update_group": {
         "pl": "Aktualizacje",
         "en": "Updates",

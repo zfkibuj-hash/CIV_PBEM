@@ -33,7 +33,9 @@ class UpdateCheckWorker(QObject):
     @Slot()
     def run(self):
         try:
+            logger.info("UpdateCheckWorker: fetching latest release")
             info = fetch_latest_release()
+            logger.info("UpdateCheckWorker: latest=%s", info.tag)
             if should_offer_update(info, APP_VERSION, self._skipped):
                 self.update_available.emit(info)
             else:

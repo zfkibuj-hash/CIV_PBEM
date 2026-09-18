@@ -1361,7 +1361,9 @@ class MainWindow(QMainWindow):
             self.settings_saved.emit()
         if pending_update_check["go"]:
             from PySide6.QtCore import QTimer
-            QTimer.singleShot(0, lambda: self.check_for_updates(manual=True))
+            # Let Settings finish teardown + drop residual click/key before
+            # the checking dialog appears (otherwise the result box can flash).
+            QTimer.singleShot(200, lambda: self.check_for_updates(manual=True))
 
     def _refresh_ui_language(self):
         """Update all UI text labels after language change."""

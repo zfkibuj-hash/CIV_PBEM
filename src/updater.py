@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -84,21 +85,81 @@ def pick_exe_asset(assets: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     return preferred[0] if preferred else exes[0]
 
 
+def _curl_http_get(
+    url: str,
+    *,
+    max_time: int,
+    accept: str,
+    dest: Optional[Path] = None,
+) -> bytes:
+    """GET via Windows curl.exe (same stack as FTP — urllib SSL hangs in frozen exe)."""
+    from src.ftp_curl import find_curl
+
+    curl = find_curl()
+    if not curl:
+        raise RuntimeError("curl.exe not found (System32)")
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if os.name == "nt" else 0
+    cmd = [
+        curl, "-sS", "--fail", "-L",
+        "--connect-timeout", "4",
+        "--max-time", str(max_time),
+        "-A", USER_AGENT,
+        "-H", f"Accept: {accept}",
+        url,
+    ]
+    if dest is not None:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        cmd.extend(["-o", str(dest)])
+    logger.info("curl HTTP GET %s (max %ss)", url.split("?")[0], max_time)
+    t0 = time.perf_counter()
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=max_time + 3,
+            creationflags=flags,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise TimeoutError(f"curl timed out after {max_time}s") from e
+    dt = time.perf_counter() - t0
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or b"").decode("utf-8", "replace").strip()
+        logger.warning("curl HTTP fail %.2fs: %s", dt, err[:200])
+        raise RuntimeError(err[:200] or f"curl exit {proc.returncode}")
+    if dest is not None:
+        logger.info("curl HTTP ok file %s %.2fs", dest.name, dt)
+        return b""
+    data = proc.stdout or b""
+    logger.info("curl HTTP ok %d bytes %.2fs", len(data), dt)
+    return data
+
+
 def fetch_latest_release(
     *,
     url: str = RELEASES_LATEST_URL,
     timeout: float = API_TIMEOUT_S,
 ) -> ReleaseInfo:
     """Fetch latest GitHub release metadata. Raises on network/parse errors."""
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Accept": "application/vnd.github+json",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    max_time = max(3, int(timeout))
+    raw: Optional[bytes] = None
+    try:
+        raw = _curl_http_get(
+            url,
+            max_time=max_time,
+            accept="application/vnd.github+json",
+        )
+    except Exception as curl_err:
+        logger.info("curl release fetch failed (%s); trying urllib", curl_err)
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+    data = json.loads(raw.decode("utf-8"))
     return release_info_from_payload(data)
 
 
@@ -174,16 +235,26 @@ def download_to(url: str, dest: Path, *, timeout: float = DOWNLOAD_TIMEOUT_S) ->
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.with_suffix(dest.suffix + ".partial")
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": USER_AGENT, "Accept": "application/octet-stream"},
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp, partial.open("wb") as out:
-        while True:
-            chunk = resp.read(1024 * 256)
-            if not chunk:
-                break
-            out.write(chunk)
+    max_time = max(30, int(timeout))
+    try:
+        _curl_http_get(
+            url,
+            max_time=max_time,
+            accept="application/octet-stream",
+            dest=partial,
+        )
+    except Exception as curl_err:
+        logger.info("curl download failed (%s); trying urllib", curl_err)
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": USER_AGENT, "Accept": "application/octet-stream"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp, partial.open("wb") as out:
+            while True:
+                chunk = resp.read(1024 * 256)
+                if not chunk:
+                    break
+                out.write(chunk)
     partial.replace(dest)
     unblock_windows_file(dest)
     return dest

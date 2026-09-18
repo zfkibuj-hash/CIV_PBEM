@@ -54,7 +54,7 @@ Przycisk **"Ustawienia"** w lewym sidebar. Trzy zakladki:
 
 1. Ustawienia → sekcja **Aktualizacje**
 2. Kliknij **Sprawdz teraz** (albo zostaw wlaczone sprawdzanie przy starcie)
-3. Ustawienia sie zamykaja, Manager pyta GitHub o nowszy release
+3. Ustawienia sie zamykaja; na pasku statusu widać **Sprawdzam aktualizacje…**, potem wynik z GitHuba
 4. Wybierz: pobierz i zainstaluj / nie teraz / otworz w przegladarce
 5. Po instalacji aplikacja restartuje sie sama
 
