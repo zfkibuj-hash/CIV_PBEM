@@ -131,6 +131,12 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 
 ## Changelog
 
+### v5.0.27
+
+**Watchdog false upload prompt**
+- Do not ask to upload a save when it is not your turn (OneDrive/AV/mirror re-touching old Civ4 native leftovers)
+- Quiet status-bar note instead of a Yes/No popup
+
 ### v5.0.26
 
 **Scheduled dropouts and eliminated UI**
@@ -281,6 +287,11 @@ Aplikacja jest **koordynatorem**, nie klientem gry.
 3. Nowa gra → dodaj graczy → wybierz prędkość → skonfiguruj transport
 4. Eksportuj `.civ4pbem` **albo skopiuj kod zaproszenia** i wyślij innym graczom
 5. Graj turę → watchdog automatycznie wyśle save i powiadomi następnego gracza
+
+### Co nowego w v5.0.27
+
+- Watcher nie pyta o upload, gdy to nie Twoja tura (OneDrive/AV/lustro czesto „odswieza” stare natywne save’y Civ4)
+- Zamiast popupu: cicha notka na pasku statusu
 
 ### Co nowego w v5.0.26
 

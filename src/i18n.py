@@ -1552,6 +1552,14 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Wykryto nowy plik save:\n{filename}\n\nCzy chcesz go wyslac do gry '{game}'?",
         "en": "New save file detected:\n{filename}\n\nDo you want to send it to game '{game}'?",
     },
+    "watcher_ignored_not_turn": {
+        "pl": "Watcher: stary/obcy save zignorowany (kolej: {name}) — {filename}",
+        "en": "Watcher: ignored leftover save (waiting for {name}) — {filename}",
+    },
+    "watcher_ignored_out": {
+        "pl": "Watcher: zignorowano save — jestes poza kolejka w '{game}' ({filename})",
+        "en": "Watcher: ignored save — you are out of the queue in '{game}' ({filename})",
+    },
 
     # --- Delete game ---
     "delete_game_title": {

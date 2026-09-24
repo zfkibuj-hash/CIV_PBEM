@@ -338,9 +338,8 @@ def main():
         filename = Path(filepath).name
         logger.info(f"Watchdog detected new save: {filename}")
 
-        # Skip our own pattern files (downloaded/uploaded by this app)
-        # Our pattern: [{seq}_]{GameName}_T{4digits}_from_{From}_to_{To}.CivBeyondSwordSave
-        if re.search(r'_T\d{4}_', filename):
+        # Skip managed PBEM names (downloaded/uploaded by this app), any turn width.
+        if re.search(r'_T\d+_', filename, re.IGNORECASE):
             logger.debug(f"Skipping our-pattern file: {filename}")
             return
 
@@ -353,6 +352,41 @@ def main():
             if tray.is_available:
                 tray.notify_new_save_detected(filename)
             window.status_label.setText(t("new_save_detected", filename=filename))
+            return
+
+        # OneDrive / AV / mirror often re-touch old native Civ4 leftovers.
+        # Never offer upload unless it is actually this player's turn.
+        my_name = config.player_name
+        matched_game.apply_scheduled_dropouts()
+        if matched_game.local_player_out_status(my_name):
+            logger.info(
+                "Ignoring watcher save for %s — local player is out of the queue",
+                matched_game.name,
+            )
+            window.status_label.setText(
+                t("watcher_ignored_out", game=matched_game.name, filename=filename),
+            )
+            return
+        if not matched_game.history or not matched_game.is_my_turn(my_name):
+            who = (
+                matched_game.current_player.name
+                if matched_game.history and matched_game.current_player
+                else "?"
+            )
+            logger.info(
+                "Ignoring watcher save for %s — not my turn (waiting for %s): %s",
+                matched_game.name, who, filename,
+            )
+            window.status_label.setText(
+                t("watcher_ignored_not_turn", name=who, filename=filename),
+            )
+            return
+        already = matched_game.already_uploaded_latest(my_name)
+        if already:
+            logger.info(
+                "Ignoring watcher save — already uploaded latest: %s", already,
+            )
+            window.status_label.setText(t("upload_already_sent", filename=already))
             return
 
         logger.info(f"Matched save to game '{matched_game.name}', uploading...")
