@@ -154,6 +154,12 @@ QLabel#banner_winner {
     font-weight: bold;
     font-size: 11pt;
 }
+QLabel#banner_out {
+    background-color: #4a148c;
+    color: #e1bee7;
+    padding: 8px 16px;
+    font-size: 10pt;
+}
 QLabel#health_ok {
     background-color: #1b5e20;
     color: #c8e6c9;
@@ -412,6 +418,12 @@ QLabel#banner_winner {
     padding: 8px 16px;
     font-weight: bold;
     font-size: 11pt;
+}
+QLabel#banner_out {
+    background-color: #7b1fa2;
+    color: white;
+    padding: 8px 16px;
+    font-size: 10pt;
 }
 QLabel#status_banner[state="your_turn"] {
     background-color: #4caf50;

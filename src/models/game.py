@@ -45,22 +45,43 @@ class Player:
     # (quit voluntarily). Either non-active state removes the player from
     # the turn rotation — see Game.get_following_player / next_player.
     status: str = "active"
+    # Optional: stay in the queue until this PBEM turn number, then drop out
+    # (auto-marked defeated if still active). None = no schedule.
+    out_from_turn: Optional[int] = None
 
     @property
     def is_active(self) -> bool:
         return self.status == "active"
+
+    def is_in_queue(self, turn: int) -> bool:
+        """True if this player still takes turns at the given PBEM turn."""
+        if self.status != "active":
+            return False
+        if self.out_from_turn is not None and int(turn) >= int(self.out_from_turn):
+            return False
+        return True
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Player":
+        raw_out = data.get("out_from_turn", None)
+        out_from = None
+        if raw_out is not None and str(raw_out).strip() != "":
+            try:
+                out_from = int(raw_out)
+            except (TypeError, ValueError):
+                out_from = None
+            if out_from is not None and out_from < 0:
+                out_from = None
         return cls(
             name=data["name"],
             email=data.get("email", ""),
             order=int(data["order"]),
             civ4_leader=data.get("civ4_leader", ""),
             status=data.get("status", "active"),
+            out_from_turn=out_from,
         )
 
 
@@ -140,17 +161,41 @@ class Game:
         from src.models.turn_calendar import turn_to_year_str
         return turn_to_year_str(self.calendar_turn(manager_turn), self.game_speed)
 
+    def _in_queue(self, player: Player) -> bool:
+        return player.is_in_queue(int(self.current_turn or 0))
+
+    def apply_scheduled_dropouts(self) -> bool:
+        """Mark players whose out_from_turn has arrived as defeated.
+
+        Returns True if any status changed. Does not bump revision by itself —
+        callers that persist/publish should bump when needed.
+        """
+        changed = False
+        turn = int(self.current_turn or 0)
+        for player in self.players:
+            if player.out_from_turn is None:
+                continue
+            if turn < int(player.out_from_turn):
+                continue
+            if player.status == "active":
+                player.status = "defeated"
+                changed = True
+        if changed:
+            self._skip_inactive_current_player()
+            self.maybe_declare_winner()
+        return changed
+
     @property
     def next_player(self) -> Optional[Player]:
-        """Next ACTIVE player after current_player_index (defeated/resigned skipped)."""
+        """Next player still in the queue after current_player_index."""
         if not self.players:
             return None
         n = len(self.players)
         for step in range(1, n + 1):
             idx = (self.current_player_index + step) % n
-            if self.players[idx].is_active:
+            if self._in_queue(self.players[idx]):
                 return self.players[idx]
-        # Nobody active (shouldn't happen in practice) — fall back to raw next.
+        # Nobody in queue (shouldn't happen in practice) — fall back to raw next.
         return self.players[(self.current_player_index + 1) % n]
 
     def get_player_index(self, player_name: str) -> Optional[int]:
@@ -175,24 +220,23 @@ class Game:
         return None
 
     def get_previous_player(self, player_name: str) -> Optional["Player"]:
-        """Get the closest ACTIVE player before the given one (circular)."""
+        """Get the closest in-queue player before the given one (circular)."""
         idx = self.get_player_index(player_name)
         if idx is None or not self.players:
             return None
         n = len(self.players)
         for step in range(1, n + 1):
             i = (idx - step) % n
-            if self.players[i].is_active:
+            if self._in_queue(self.players[i]):
                 return self.players[i]
         return self.players[(idx - 1) % n]
 
     def get_following_player(self, player_name: str) -> Optional["Player"]:
-        """Get the closest ACTIVE player after the given one (circular).
+        """Get the closest in-queue player after the given one (circular).
 
         This is what decides who a save is addressed to next (see
         managed_filename / get_save_filename) — skipping defeated/resigned
-        players here is what keeps the PBEM chain from stalling forever on
-        someone who is out of the game.
+        / scheduled dropouts here keeps the PBEM chain from stalling.
         """
         idx = self.get_player_index(player_name)
         if idx is None or not self.players:
@@ -200,12 +244,12 @@ class Game:
         n = len(self.players)
         for step in range(1, n + 1):
             i = (idx + step) % n
-            if self.players[i].is_active:
+            if self._in_queue(self.players[i]):
                 return self.players[i]
         return self.players[(idx + 1) % n]
 
     def advance_turn(self, filename: str = ""):
-        """Move to the next ACTIVE player's turn. If we wrap around, increment turn number."""
+        """Move to the next in-queue player's turn. If we wrap around, increment turn number."""
         turn_record = Turn(
             turn_number=self.current_turn,
             player_name=self.current_player.name if self.current_player else "unknown",
@@ -217,13 +261,14 @@ class Game:
         prev_idx = self.current_player_index
         for step in range(1, n + 1):
             idx = (prev_idx + step) % n
-            if self.players[idx].is_active:
+            if self._in_queue(self.players[idx]):
                 self.current_player_index = idx
                 break
         else:
             self.current_player_index = (prev_idx + 1) % n
         if self.current_player_index <= prev_idx:
             self.current_turn += 1
+        self.apply_scheduled_dropouts()
         self.bump_revision()
 
     def set_player_status(self, player_name: str, status: str) -> bool:
@@ -251,14 +296,14 @@ class Game:
 
     @property
     def active_players(self) -> list["Player"]:
-        return [p for p in self.players if p.is_active]
+        return [p for p in self.players if self._in_queue(p)]
 
     @property
     def is_finished(self) -> bool:
         return bool((self.winner or "").strip())
 
     def maybe_declare_winner(self) -> Optional[str]:
-        """If exactly one active player remains and no winner yet, they won."""
+        """If exactly one in-queue player remains and no winner yet, they won."""
         if (self.winner or "").strip():
             return None
         active = self.active_players
@@ -320,25 +365,27 @@ class Game:
             if winner != (self.winner or "").strip():
                 self.winner = winner
                 changed = True
+        if self.apply_scheduled_dropouts():
+            changed = True
         return changed
 
     def _skip_inactive_current_player(self) -> None:
-        """If the current holder is defeated/resigned, move the pointer forward."""
+        """If the current holder is out of the queue, move the pointer forward."""
         if not self.players:
             return
         idx = self.current_player_index
-        if 0 <= idx < len(self.players) and self.players[idx].is_active:
+        if 0 <= idx < len(self.players) and self._in_queue(self.players[idx]):
             return
         n = len(self.players)
         start = idx if 0 <= idx < n else 0
         for step in range(1, n + 1):
             i = (start + step) % n
-            if self.players[i].is_active:
+            if self._in_queue(self.players[i]):
                 self.current_player_index = i
                 return
 
     def merge_player_status(self, remote_players: list["Player"]) -> bool:
-        """Copy roster status from remote without bumping revision."""
+        """Copy roster status + out_from_turn from remote without bumping revision."""
         changed = False
         for rp in remote_players:
             idx = self.get_player_index(rp.name)
@@ -348,7 +395,13 @@ class Game:
             if self.players[idx].status != new_status:
                 self.players[idx].status = new_status
                 changed = True
-        if changed:
+            remote_out = rp.out_from_turn
+            if self.players[idx].out_from_turn != remote_out:
+                self.players[idx].out_from_turn = remote_out
+                changed = True
+        if self.apply_scheduled_dropouts():
+            changed = True
+        elif changed:
             self._skip_inactive_current_player()
         return changed
 
@@ -1199,11 +1252,11 @@ class Game:
         # Defensive: a native (non-managed) Civ4 filename could still point at
         # a defeated/resigned player. Skip forward to the next active one so
         # we never get stuck "waiting" on someone who is out of the game.
-        if not self.players[idx].is_active:
+        if not self._in_queue(self.players[idx]):
             n = len(self.players)
             for step in range(1, n + 1):
                 i = (idx + step) % n
-                if self.players[i].is_active:
+                if self._in_queue(self.players[i]):
                     idx = i
                     break
         if self.current_player_index == idx:
@@ -1317,10 +1370,27 @@ class Game:
             return False
         if self.current_player is None:
             return False
+        if not self._in_queue(self.current_player):
+            return False
         if not (my_name or "").strip():
             return False
         game_name = self.get_game_player_name(my_name)
         return self.current_player.name.casefold() == game_name.casefold()
+
+    def local_player_out_status(self, my_name: str) -> Optional[str]:
+        """If the local roster slot is out of the queue, return defeated/resigned."""
+        if not (my_name or "").strip():
+            return None
+        self.apply_scheduled_dropouts()
+        game_name = self.get_game_player_name(my_name)
+        idx = self.get_player_index(game_name)
+        if idx is None:
+            return None
+        player = self.players[idx]
+        if self._in_queue(player):
+            return None
+        status = player.status or "defeated"
+        return status if status in ("defeated", "resigned") else "defeated"
 
     def get_game_player_name(self, local_name: str) -> str:
         """Resolve local player name to game player name via alias.

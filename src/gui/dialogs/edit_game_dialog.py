@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QComboBox, QGroupBox,
     QDialogButtonBox, QPushButton, QColorDialog, QFileDialog, QMessageBox,
-    QInputDialog,
+    QInputDialog, QSpinBox,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
@@ -133,10 +133,11 @@ class EditGameDialog(QDialog):
 
         header = QHBoxLayout()
         for text, width in (
-            (t("edit_player_nick"), 100),
+            (t("edit_player_nick"), 90),
             ("Email", 0),
             (t("civ4_leader_name"), 0),
-            (t("edit_player_status"), 110),
+            (t("edit_player_status"), 100),
+            (t("edit_player_out_from"), 78),
             ("", 28),
         ):
             lab = QLabel(text)
@@ -148,11 +149,12 @@ class EditGameDialog(QDialog):
         self._email_edits = []
         self._leader_combos = []
         self._status_combos = []
+        self._out_from_spins = []
         self._color_buttons = []
         for i, p in enumerate(self.game.players):
             row = QHBoxLayout()
             name_label = QLabel(f"{p.name}:")
-            name_label.setMinimumWidth(100)
+            name_label.setMinimumWidth(90)
             row.addWidget(name_label)
 
             email_edit = QLineEdit(p.email)
@@ -161,13 +163,13 @@ class EditGameDialog(QDialog):
 
             leader_combo = QComboBox()
             leader_combo.setEditable(True)
-            leader_combo.setMinimumWidth(180)
+            leader_combo.setMinimumWidth(160)
             leader_combo.setToolTip(t("civ4_leader_name"))
             self._fill_leader_combo(leader_combo, p.civ4_leader or "")
             row.addWidget(leader_combo, 2)
 
             status_combo = QComboBox()
-            status_combo.setMinimumWidth(110)
+            status_combo.setMinimumWidth(100)
             status_combo.addItem(t("player_status_active"), "active")
             status_combo.addItem(t("player_status_defeated"), "defeated")
             status_combo.addItem(t("player_status_resigned"), "resigned")
@@ -175,6 +177,15 @@ class EditGameDialog(QDialog):
             status_combo.setCurrentIndex(idx if idx >= 0 else 0)
             status_combo.setToolTip(t("edit_player_status_hint"))
             row.addWidget(status_combo)
+
+            out_spin = QSpinBox()
+            out_spin.setRange(0, 9999)
+            out_spin.setSpecialValueText("—")
+            out_spin.setMinimumWidth(72)
+            out_spin.setToolTip(t("edit_player_out_from_hint"))
+            out_val = p.out_from_turn
+            out_spin.setValue(int(out_val) if out_val is not None else 0)
+            row.addWidget(out_spin)
 
             current_color = self.game.player_colors.get(
                 p.name, DEFAULT_COLORS[i % len(DEFAULT_COLORS)],
@@ -193,8 +204,14 @@ class EditGameDialog(QDialog):
             self._email_edits.append((p, email_edit))
             self._leader_combos.append((p, leader_combo))
             self._status_combos.append((p, status_combo))
+            self._out_from_spins.append((p, out_spin))
             self._color_buttons.append((p.name, color_btn, current_color))
             players_layout.addLayout(row)
+
+        out_hint = QLabel(t("edit_player_out_from_hint"))
+        out_hint.setWordWrap(True)
+        out_hint.setStyleSheet("color: #9e9e9e; font-size: 8pt;")
+        players_layout.addWidget(out_hint)
 
         layout.addWidget(players_group)
 
@@ -383,11 +400,18 @@ class EditGameDialog(QDialog):
             (combo.currentData() or "active") != (player.status or "active")
             for player, combo in self._status_combos
         )
+        out_changed = False
+        for player, spin in self._out_from_spins:
+            raw = int(spin.value())
+            new_out = None if raw <= 0 else raw
+            if new_out != player.out_from_turn:
+                out_changed = True
+                break
         winner_changed = (
             (self.winner_combo.currentData() or "").strip()
             != (self.game.winner or "").strip()
         )
-        if (status_changed or winner_changed) and not self._confirm_admin_password():
+        if (status_changed or winner_changed or out_changed) and not self._confirm_admin_password():
             QMessageBox.information(self, t("info"), t("edit_status_needs_admin"))
             return
 
@@ -415,9 +439,16 @@ class EditGameDialog(QDialog):
                 # Editable combo may show "Leader — Civ"; keep left part if matched
                 player.civ4_leader = text.split("—")[0].strip() if "—" in text else text
 
+        for player, out_spin in self._out_from_spins:
+            raw = int(out_spin.value())
+            player.out_from_turn = None if raw <= 0 else raw
+
         for player, status_combo in self._status_combos:
             new_status = status_combo.currentData() or "active"
             self.game.set_player_status(player.name, new_status)
+
+        if self.game.apply_scheduled_dropouts() or out_changed:
+            self.game.bump_revision()
 
         explicit_winner = (self.winner_combo.currentData() or "").strip()
         if explicit_winner:

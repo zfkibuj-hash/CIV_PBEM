@@ -963,5 +963,38 @@ class SaveTimestampStatsTests(unittest.TestCase):
         self.assertEqual(game.history[-1].timestamp, 0.0)
 
 
+class ScheduledDropoutTests(unittest.TestCase):
+    def test_out_from_turn_skips_routing(self):
+        game = _game()
+        game.current_turn = 4
+        cantrol = game.players[1]
+        cantrol.out_from_turn = 5
+        self.assertTrue(cantrol.is_in_queue(4))
+        self.assertEqual(game.get_following_player("Mihau").name, "Cantrol")
+        game.current_turn = 5
+        self.assertFalse(cantrol.is_in_queue(5))
+        self.assertEqual(game.get_following_player("Mihau").name, "SzyMen")
+        self.assertEqual(
+            game.get_save_filename("Mihau"),
+            "0000_Kuzyny_T0005_from_Mihau_to_SzyMen.CivBeyondSwordSave",
+        )
+
+    def test_apply_scheduled_dropouts_marks_defeated(self):
+        game = _game()
+        game.current_turn = 5
+        game.players[1].out_from_turn = 5
+        self.assertTrue(game.apply_scheduled_dropouts())
+        self.assertEqual(game.players[1].status, "defeated")
+        self.assertEqual(game.local_player_out_status("Cantrol"), "defeated")
+
+    def test_player_roundtrip_out_from_turn(self):
+        p = Player.from_dict({
+            "name": "Cantrol", "email": "", "order": 1,
+            "status": "active", "out_from_turn": 12,
+        })
+        self.assertEqual(p.out_from_turn, 12)
+        self.assertEqual(p.to_dict()["out_from_turn"], 12)
+
+
 if __name__ == "__main__":
     unittest.main()

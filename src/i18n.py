@@ -140,12 +140,12 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Saves in the queue",
     },
     "edit_queue_saves_hint": {
-        "pl": "Kazdy wiersz = jeden plik na serwerze. Seq / From / To / Turn musza "
-              "pasowac do nazwy (albo kliknij Przebuduj nazwe). "
-              "Ten wiersz jest biezacy = przenosi save na koniec i ustawia kto czeka.",
-        "en": "Each row is one server file. Seq / From / To / Turn should match "
-              "the filename (or click Rebuild name). "
-              "Set as current moves that save to the end and sets who is waiting.",
+        "pl": "Kazdy wiersz = jeden plik. Mozesz zaznaczyc wiele wierszy (Ctrl/Shift) "
+              "i usunac. Seq / From / To / Turn musza pasowac do nazwy "
+              "(albo kliknij Przebuduj nazwe). Ostatni wiersz = biezacy save.",
+        "en": "Each row is one file. Multi-select rows (Ctrl/Shift) to remove. "
+              "Seq / From / To / Turn must match the name (or click Rebuild name). "
+              "Last row = current save.",
     },
     "edit_queue_col_seq": {
         "pl": "Seq",
@@ -192,24 +192,62 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Rebuild name",
     },
     "edit_queue_from_server": {
-        "pl": "Z serwera...",
-        "en": "From server...",
+        "pl": "Z transportu...",
+        "en": "From transport...",
     },
     "edit_queue_from_server_hint": {
-        "pl": "Wczytaj liste save'ow z FTP (albo z historii/lokalnych, jesli listing nie dziala). Potem mozesz poprawic recznie.",
-        "en": "Load the save list from FTP (or history/local files if listing fails). You can edit afterwards.",
+        "pl": "Wczytaj liste save'ow z FTP / e-maila (IMAP/POP3) albo z historii, "
+              "jesli listing nie dziala. Pokaze sie pelna przewijana lista — "
+              "potem poprawiasz w tabeli i zapisujesz (z publikacja).",
+        "en": "Load the save list from FTP / email (IMAP/POP3) or history if "
+              "listing fails. You get a full scrollable list — then edit the "
+              "table and Save (with publish).",
     },
     "edit_queue_from_server_empty": {
         "pl": "Brak save'ow do wczytania (serwer, historia i folder sa puste).",
         "en": "No saves to load (server, history and folder are empty).",
     },
     "edit_queue_from_server_src_server": {
+        "pl": "transport (listing)",
+        "en": "transport listing",
+    },
+    "edit_queue_from_server_src_ftp": {
         "pl": "lista z FTP",
         "en": "FTP listing",
     },
+    "edit_queue_from_server_src_email": {
+        "pl": "lista z skrzynki e-mail (tematy z zalacznikami)",
+        "en": "mailbox listing (subjects with attachments)",
+    },
+    "edit_queue_from_server_src_sftp": {
+        "pl": "lista z SFTP",
+        "en": "SFTP listing",
+    },
+    "edit_queue_from_server_src_webdav": {
+        "pl": "lista z WebDAV",
+        "en": "WebDAV listing",
+    },
     "edit_queue_from_server_src_local": {
-        "pl": "historia + lokalne pliki (listing FTP niedostepny)",
-        "en": "history + local files (FTP listing unavailable)",
+        "pl": "historia + lokalne pliki (listing niedostepny)",
+        "en": "history + local files (listing unavailable)",
+    },
+    "edit_queue_from_server_preview_title": {
+        "pl": "Podglad kolejki z transportu",
+        "en": "Queue preview from transport",
+    },
+    "edit_queue_from_server_preview_hint": {
+        "pl": "Zrodlo: {source} — {n} save'ow. Mozesz tu zmienic seq / ture / From / To, "
+              "przebudowac nazwy, usunac wiersze — potem Wczytaj do tabeli.",
+        "en": "Source: {source} — {n} saves. Edit seq / turn / From / To here, "
+              "rebuild names, remove rows — then Load into table.",
+    },
+    "edit_queue_rebuild_all": {
+        "pl": "Przebuduj wszystkie nazwy",
+        "en": "Rebuild all names",
+    },
+    "edit_queue_from_server_load": {
+        "pl": "Wczytaj do tabeli",
+        "en": "Load into table",
     },
     "edit_queue_from_server_confirm": {
         "pl": "Wczytac {n} save'ow ({source}) do tabeli?\n"
@@ -221,11 +259,15 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "pl": "Wczytano {n} save'ow do tabeli.\n\n"
               "Po Zapisz bedzie czekal: {player}\n"
               "Biezacy plik:\n{filename}\n\n"
-              "Kliknij Zapisz (z publikacja na FTP), inaczej nic sie nie zmieni.",
+              "Kliknij Zapisz (z publikacja na transport), inaczej nic sie nie zmieni.",
         "en": "Loaded {n} saves into the table.\n\n"
               "After Save, waiting for: {player}\n"
               "Current file:\n{filename}\n\n"
-              "Click Save (with FTP publish), otherwise nothing changes.",
+              "Click Save (with publish to transport), otherwise nothing changes.",
+    },
+    "edit_queue_remove_n": {
+        "pl": "Usun zaznaczone ({n})",
+        "en": "Remove selected ({n})",
     },
     "edit_queue_propagate": {
         "pl": "Zmiana seq/tury idzie w dol (seq +1, tura blokami po liczbie graczy)",
@@ -370,8 +412,8 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "  YOUR TURN! Click Play now or download the save.",
     },
     "play_now": {
-        "pl": "Sprawdz i zagraj",
-        "en": "Check & Play",
+        "pl": "Graj moja ture",
+        "en": "Play my turn",
     },
     "play_now_working": {
         "pl": "Pobieranie save'a i uruchamianie Civ4...",
@@ -1829,8 +1871,24 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Status",
     },
     "edit_player_status_hint": {
-        "pl": "Pokonany/zrezygnowany gracz jest pomijany w kolejce tur — kolejny save trafi automatycznie do nastepnego aktywnego gracza.",
-        "en": "A defeated/resigned player is skipped in the turn order — the next save automatically routes to the next active player.",
+        "pl": "Pokonany/zrezygnowany gracz jest pomijany w kolejce tur — kolejny save trafi automatycznie do nastepnego aktywnego gracza. Mozesz tez ustawic „Wypada od tury”.",
+        "en": "A defeated/resigned player is skipped in the turn order — the next save automatically routes to the next active player. You can also set “Out from turn”.",
+    },
+    "edit_player_out_from": {
+        "pl": "Wypada od tury",
+        "en": "Out from turn",
+    },
+    "edit_player_out_from_hint": {
+        "pl": "Opcjonalnie: gracz zostaje w kolejce do tury X−1, od tury X wypada (status → pokonany). „—” = bez harmonogramu (tylko status).",
+        "en": "Optional: player stays in the queue until turn X−1, then drops out from turn X (status → defeated). “—” = no schedule (status only).",
+    },
+    "banner_defeated": {
+        "pl": "Zostales pokonany — mozesz sledzic gre i wynik.",
+        "en": "You were defeated — you can still follow the game and the result.",
+    },
+    "banner_resigned": {
+        "pl": "Zrezygnowales z dalszej gry — mozesz sledzic wynik.",
+        "en": "You resigned — you can still follow the result.",
     },
     "player_status_active": {
         "pl": "Aktywny",

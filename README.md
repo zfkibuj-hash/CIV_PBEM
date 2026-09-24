@@ -1,4 +1,4 @@
-# Civ4 PBEM Manager v5.0.13
+# Civ4 PBEM Manager v5.0.26
 
 <p align="center">
   <img src="icon_preview.png" alt="Civ4 PBEM Manager" width="512"/>
@@ -43,12 +43,12 @@ It was built entirely by AI (Claude / Kiro) as pure vibecoding for fun. The huma
 - **In-app notifications**: flag files on the transport server — works without any email setup
 - **Encrypted config**: master password protects your server credentials on disk (AES-256)
 - **Export/Import**: share a `.civ4pbem` file **or an invite code** (paste on Discord) — they import it and are ready to go
-- **Player roster**: mark players defeated or resigned; the turn queue skips them
+- **Player roster**: mark players defeated or resigned; optional **out from turn X**; the turn queue skips them
 - **Winner**: auto-declared when one active player remains, or set in Edit Game
+- **Eliminated view**: defeated/resigned players see a clear banner and can still follow history and the result
 - **Polish / English UI**: runtime language switching, no restart needed
 - **Dark / Light theme**: because some of us play at night
 - **Tray badge**: persistent reminder when someone is waiting on your turn
-- **Auto-update**: checks GitHub Releases on startup (built `.exe`), downloads and installs newer versions
 
 ---
 
@@ -69,24 +69,9 @@ This is important. The app is a **coordinator**, not a game client.
 
 ## Download
 
-**Windows .exe** is available in [Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases/latest) — no Python installation needed.
+**Windows .exe** is available in [Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases) -- no Python installation needed.
 
-Download `Civ4PBEMManager.exe` from the latest release and run it.
-
-### How to check for updates (built `.exe`)
-
-1. Open **Settings** (left sidebar).
-2. In the **Updates** / **Aktualizacje** group:
-   - leave **Check for updates on startup** on (recommended), and/or
-   - click **Check now** / **Sprawdź teraz**.
-3. Settings closes, then the app talks to [GitHub Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases/latest).
-4. If a newer version exists you can **Download and install**, **Not now** (skip this version), or **Open in browser**.
-5. After install the Manager restarts by itself.
-
-Notes:
-- Self-update works only with the frozen Windows `.exe` from Releases — not when running `python main.py`.
-- First jump onto the updater: install **5.0.13+ once by hand** if you are still on 5.0.12 or older.
-- Need internet access to `api.github.com` / `github.com`.
+Just download `Civ4PBEMManager.exe` and run it.
 
 1. Run the app → **Settings → General**
 2. Set your player name, email, save folder path
@@ -136,71 +121,29 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 | Languages | Polish, English (runtime switch) |
 | Security | AES-256 encrypted credentials |
 | History | Full turn log, revert, **manual queue / save slots** |
-| Roster | Active / defeated / resigned; winner |
+| Roster | Active / defeated / resigned; out from turn X; winner |
 | Join | `.civ4pbem` file or invite code |
 | Statistics | Per-player times, averages |
 | Calendar | In-game year display |
 | Reminders | Manual + auto after X days; tray badge |
-| Updates | GitHub Releases check + self-install (`.exe`) |
 
 ---
 
 ## Changelog
 
-### v5.0.19
+### v5.0.26
 
-**Check now: show result / clear status**
-- curl already reached GitHub in ~0.3s, but the “Checking…” status could stick forever when you were already newer than the latest GitHub release
-- Result dialog is shown via a GUI-thread bridge; status always clears
+**Scheduled dropouts and eliminated UI**
+- Edit Game: optional **Out from turn** — player stays in the queue until turn X−1, then drops out (status → defeated)
+- Local defeated/resigned players see a clear banner; they no longer get turn notifications, but can still follow history and the result
+- Queue editor: Whose turn is a single compact row; Player order keeps the vertical list with Up/Down
 
-### v5.0.18
+### v5.0.19–5.0.25
 
-**Check now: use curl like FTP**
-- GitHub release check/download via `curl.exe` (urllib SSL was hanging inside the frozen `.exe`)
-- Status bar + timeout kept from 5.0.17 (no modal freeze)
-
-### v5.0.17
-
-**Check now: no freeze**
-- Dropped the modal “Checking…” dialog (it could lock the whole app if GitHub stalled)
-- Status bar text + 12s UI timeout instead; result dialog still delayed so it does not flash
-
-### v5.0.16
-
-**Check now: readable update dialog** *(superseded by 5.0.17)*
-- Tried a stable “Checking…” window — could freeze the UI; use 5.0.17+
-
-### v5.0.15
-
-**Watchdog: one upload prompt per save**
-- Waits until the Civ4 save file size is stable before asking to upload
-- Cooldown + single dialog so `created`/`modified` bursts no longer double-prompt
-- Download ignore lasts the full TTL and matches by filename (OneDrive / mirror folders)
-
-### v5.0.14
-
-**Safer dates, mid-turn reject, update-check fix**
-- Reads **game speed** and **Civ4 game turn** from the save binary (year calendar matches Civ4)
-- Rejects uploads where the next player is not `turnActive` yet (mid-turn save)
-- **Check now** no longer crashes: settings close first, then the GitHub check runs
-
-### v5.0.13
-
-**Auto-update**
-- On startup (frozen `.exe` only) checks [GitHub Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases) for a newer version
-- Dialog: download & install / skip this version / open in browser
-- Clears Windows Mark-of-the-Web after download, replaces the running exe, restarts
-- Settings: enable/disable + **Check now** (see [How to check for updates](#how-to-check-for-updates-built-exe))
-- Install **5.0.13 once by hand** if you are still on 5.0.12 (older builds have no updater)
-
-### v5.0.12
-
-**Safer uploads (mid-turn saves)**
-- Native Civ4 saves are validated against **leader** names in `_to_` (e.g. `Alexander`), not only PBEM nicks
-- A save that is still your turn cannot be renamed as the next player's file
-- Next player needs a `civ4_leader` mapping in Edit Game
-
-Also includes queue rebuild / revert backup / FTP listing fixes from 5.0.7–5.0.11.
+**Updates and queue repair**
+- Check for updates via `curl` (frozen exe no longer hangs on SSL); stuck “Checking…” fixed
+- Queue editor: From-transport preview with full edit (seq/turn/from/to, rebuild name), colors, multi-select
+- Startup whose-turn check; Play button renamed to “Play my turn”
 
 ### v5.0.6
 
@@ -339,40 +282,11 @@ Aplikacja jest **koordynatorem**, nie klientem gry.
 4. Eksportuj `.civ4pbem` **albo skopiuj kod zaproszenia** i wyślij innym graczom
 5. Graj turę → watchdog automatycznie wyśle save i powiadomi następnego gracza
 
-### Jak sprawdzić aktualizację (zbudowany `.exe`)
+### Co nowego w v5.0.26
 
-1. **Ustawienia** (lewy sidebar).
-2. Sekcja **Aktualizacje**:
-   - włącz **Sprawdzaj aktualizacje przy starcie** i/lub
-   - kliknij **Sprawdź teraz**.
-3. Okno ustawień się zamyka, Manager łączy się z [GitHub Releases](https://github.com/zfkibuj-hash/CIV_PBEM/releases/latest).
-4. Przy nowszej wersji: **Pobierz i zainstaluj** / **Nie teraz** / **Otwórz w przeglądarce**.
-5. Po instalacji Manager sam się uruchomi ponownie.
-
-Uwagi: działa tylko na `.exe` z Releases (nie przy `python main.py`). Jeśli masz ≤5.0.12 — raz zainstaluj **5.0.13+ ręcznie**. Potrzebny dostęp do `github.com`.
-
-### Co nowego w v5.0.15
-
-- Watchdog czeka az save sie dopisze — jedno pytanie o upload (bez dublowania)
-- Ignore po downloadzie dziala tez po nazwie (OneDrive / mirror)
-
-### Co nowego w v5.0.14
-
-- Odczyt **prędkości gry** i tury Civ4 z save'a (daty / lata)
-- Odrzut mid-turn save (gdy w środku nadal aktywny poprzedni gracz)
-- **Sprawdź teraz** nie crashuje (najpierw zamyka Ustawienia)
-
-### Co nowego w v5.0.13
-
-- **Auto-aktualizacja** z GitHub Releases (tylko zbudowany `.exe`)
-- Dialog: pobierz i zainstaluj / nie teraz / otworz w przegladarce
-- Ustawienia → Aktualizacje; raz zainstaluj 5.0.13 recznie, jesli masz jeszcze 5.0.12
-- Szczegoly: [Jak sprawdzic aktualizacje](#jak-sprawdzić-aktualizację-zbudowany-exe)
-
-### Co nowego w v5.0.12
-
-- Upload sprawdza lidera Civ4 w nazwie `_to_` — nie przepuszcza save'a sprzed End Turn
-- W Edytuj gre ustaw liderow (Alexander / Frederick / …)
+- **Edytuj gre**: opcjonalnie **Wypada od tury X** — gracz zostaje w kolejce do X−1, potem wypada (status → pokonany)
+- Lokalny pokonany/zrezygnowany widzi wyrazny banner; nie dostaje powiadomien o turze, ale moze sledzic historie i wynik
+- Edytor kolejki: „Czyj ruch” w jednej linii; kolejnosc graczy z powrotem jako lista + W gore/W dol
 
 ### Co nowego w v5.0.6
 

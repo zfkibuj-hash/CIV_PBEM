@@ -366,8 +366,9 @@ class AppController(QObject):
             except Exception:
                 logger.exception("try_list_saves failed")
                 listed = []
+            src = self._queue_rebuild_source_key(transport)
             if listed:
-                return listed, "server"
+                return listed, src
             try:
                 data = self._download_turns_log(game, transport)
             except Exception:
@@ -381,7 +382,7 @@ class AppController(QObject):
                 ]
                 listed = _managed(_still_on_server(remote_hist))
                 if listed:
-                    return listed, "server"
+                    return listed, src
 
         names: dict[str, str] = {}
         for fn in game.history_save_filenames():
@@ -394,10 +395,25 @@ class AppController(QObject):
                     names.setdefault(path.name.casefold(), path.name)
         candidates = _managed(list(names.values()))
         if transport:
+            src = self._queue_rebuild_source_key(transport)
             candidates = _managed(_still_on_server(candidates))
             if candidates:
-                return candidates, "server"
+                return candidates, src
         return candidates, "local"
+
+    @staticmethod
+    def _queue_rebuild_source_key(transport) -> str:
+        """i18n key suffix for From-server source label."""
+        if isinstance(transport, EmailTransport):
+            return "email"
+        name = type(transport).__name__.lower()
+        if "sftp" in name:
+            return "sftp"
+        if "webdav" in name:
+            return "webdav"
+        if "ftp" in name:
+            return "ftp"
+        return "server"
 
     def download_save_list(self, game: Game) -> list[str]:
         """Get list of saves available for THIS player (sent by previous player)."""

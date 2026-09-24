@@ -1404,6 +1404,10 @@ def main():
 
         _run_health_async(check_remote=False, alert=True)
 
+        # First turn/save poll right after startup — do not wait for the
+        # periodic timer (user otherwise must click Check now by hand).
+        QTimer.singleShot(800, lambda: handle_check(from_tray=False))
+
         if config.get("auto_update_check", True):
             QTimer.singleShot(2500, lambda: window.check_for_updates(manual=False))
 

@@ -519,6 +519,7 @@ class MainWindow(QMainWindow):
 
         # Empty history = never synced from FTP. Default index 0 looks like
         # "YOUR TURN" after import — that is a lie until Check fills history.
+        out_status = game.local_player_out_status(my_name) if game.history else None
         if not game.history:
             self.status_banner.setText(t("banner_no_server_state"))
             self.status_banner.setObjectName("banner_waiting")
@@ -526,6 +527,14 @@ class MainWindow(QMainWindow):
         elif game.is_finished:
             self.status_banner.setText(t("banner_winner", player=game.winner))
             self.status_banner.setObjectName("banner_winner")
+            self.btn_play_now.hide()
+        elif out_status == "resigned":
+            self.status_banner.setText(t("banner_resigned"))
+            self.status_banner.setObjectName("banner_out")
+            self.btn_play_now.hide()
+        elif out_status == "defeated":
+            self.status_banner.setText(t("banner_defeated"))
+            self.status_banner.setObjectName("banner_out")
             self.btn_play_now.hide()
         elif game.is_my_turn(my_name):
             self.status_banner.setText(t("your_turn_banner"))
