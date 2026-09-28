@@ -122,6 +122,15 @@ class Game:
     # Civ4 InitCore game_turn from the latest handoff save (year calendar).
     # Manager ``current_turn`` is the PBEM round counter and can be ahead by 1+.
     civ4_game_turn: Optional[int] = None
+    # InitCore map summary (from latest save meta)
+    map_script: str = ""
+    world_size: str = ""
+    climate: str = ""
+    sea_level: str = ""
+    starting_era: str = ""
+    # Vanilla WorldInfo estimate for world_size (custom/WB maps may differ)
+    map_width: Optional[int] = None
+    map_height: Optional[int] = None
     # Timestamp of last reminder sent (to avoid spamming)
     last_reminder_sent: float = 0.0
     # Player colors for history display (player_name -> hex color)
@@ -160,6 +169,34 @@ class Game:
     def calendar_year_str(self, manager_turn: Optional[int] = None) -> str:
         from src.models.turn_calendar import turn_to_year_str
         return turn_to_year_str(self.calendar_turn(manager_turn), self.game_speed)
+
+    def map_details_line(self) -> str:
+        """Short map summary for the game details header (empty if unknown)."""
+        from src.i18n import t
+
+        parts: list[str] = []
+        script = (self.map_script or "").replace("_", " ").strip()
+        if script:
+            parts.append(script)
+        if self.world_size:
+            size = t(f"map_world_{self.world_size}")
+            if self.map_width and self.map_height:
+                size = t(
+                    "map_world_with_tiles",
+                    size=size,
+                    w=int(self.map_width),
+                    h=int(self.map_height),
+                )
+            parts.append(size)
+        if self.starting_era:
+            parts.append(t(f"map_era_{self.starting_era}"))
+        if self.climate:
+            parts.append(t(f"map_climate_{self.climate}"))
+        if self.sea_level:
+            parts.append(t(f"map_sea_{self.sea_level}"))
+        if self.game_speed:
+            parts.append(t(f"speed_{self.game_speed}"))
+        return " · ".join(parts)
 
     def _in_queue(self, player: Player) -> bool:
         return player.is_in_queue(int(self.current_turn or 0))
@@ -789,6 +826,16 @@ class Game:
             self.game_speed = remote.game_speed
         if remote.civ4_game_turn is not None:
             self.civ4_game_turn = remote.civ4_game_turn
+        for attr in (
+            "map_script", "world_size", "climate", "sea_level", "starting_era",
+        ):
+            val = (getattr(remote, attr, None) or "").strip()
+            if val:
+                setattr(self, attr, val)
+        if remote.map_width is not None:
+            self.map_width = int(remote.map_width)
+        if remote.map_height is not None:
+            self.map_height = int(remote.map_height)
         self.merge_player_emails(remote.players)
         self.merge_player_status(remote.players)
         self.apply_remote_claims(getattr(remote, "player_claims", None) or {})
@@ -1095,7 +1142,7 @@ class Game:
         return True, ""
 
     def apply_save_meta_from_path(self, path: Path | str) -> bool:
-        """Update ``game_speed`` / ``civ4_game_turn`` from a Civ4 save."""
+        """Update speed / Civ4 turn / map summary from a Civ4 save."""
         try:
             from src.civ4_save_info import parse_civ4_save_meta
             meta = parse_civ4_save_meta(path)
@@ -1109,6 +1156,19 @@ class Game:
             changed = True
         if meta.game_turn is not None and self.civ4_game_turn != meta.game_turn:
             self.civ4_game_turn = int(meta.game_turn)
+            changed = True
+        for attr in (
+            "map_script", "world_size", "climate", "sea_level", "starting_era",
+        ):
+            val = (getattr(meta, attr, None) or "").strip()
+            if val and getattr(self, attr) != val:
+                setattr(self, attr, val)
+                changed = True
+        if meta.map_width is not None and self.map_width != int(meta.map_width):
+            self.map_width = int(meta.map_width)
+            changed = True
+        if meta.map_height is not None and self.map_height != int(meta.map_height):
+            self.map_height = int(meta.map_height)
             changed = True
         return changed
 
@@ -1537,6 +1597,13 @@ class Game:
             "player_claims": self.player_claims,
             "game_speed": self.game_speed,
             "civ4_game_turn": self.civ4_game_turn,
+            "map_script": self.map_script or "",
+            "world_size": self.world_size or "",
+            "climate": self.climate or "",
+            "sea_level": self.sea_level or "",
+            "starting_era": self.starting_era or "",
+            "map_width": self.map_width,
+            "map_height": self.map_height,
             "last_reminder_sent": self.last_reminder_sent,
             "player_colors": self.player_colors,
             "history_color_mode": self.history_color_mode,
@@ -1562,6 +1629,13 @@ class Game:
             "player_claims": self.player_claims,
             "game_speed": self.game_speed,
             "civ4_game_turn": self.civ4_game_turn,
+            "map_script": self.map_script or "",
+            "world_size": self.world_size or "",
+            "climate": self.climate or "",
+            "sea_level": self.sea_level or "",
+            "starting_era": self.starting_era or "",
+            "map_width": self.map_width,
+            "map_height": self.map_height,
             "last_reminder_sent": self.last_reminder_sent,
             "player_colors": self.player_colors,
             "history_color_mode": self.history_color_mode,
@@ -1595,6 +1669,17 @@ class Game:
                 int(data["civ4_game_turn"])
                 if data.get("civ4_game_turn") is not None
                 else None
+            ),
+            map_script=(data.get("map_script") or "").strip(),
+            world_size=(data.get("world_size") or "").strip(),
+            climate=(data.get("climate") or "").strip(),
+            sea_level=(data.get("sea_level") or "").strip(),
+            starting_era=(data.get("starting_era") or "").strip(),
+            map_width=(
+                int(data["map_width"]) if data.get("map_width") is not None else None
+            ),
+            map_height=(
+                int(data["map_height"]) if data.get("map_height") is not None else None
             ),
             last_reminder_sent=data.get("last_reminder_sent", 0.0),
             player_colors=data.get("player_colors", {}),

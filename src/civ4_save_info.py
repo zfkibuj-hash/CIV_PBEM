@@ -33,6 +33,37 @@ _SPEED_BY_ENUM = {
     3: "quick",
 }
 
+# WorldSizeTypes → display key + vanilla BTS grid (plots). Custom / WB maps may differ.
+_WORLD_BY_ENUM = {
+    0: ("duel", 40, 24),
+    1: ("tiny", 52, 32),
+    2: ("small", 64, 40),
+    3: ("standard", 84, 52),
+    4: ("large", 104, 64),
+    5: ("huge", 128, 80),
+}
+_CLIMATE_BY_ENUM = {
+    0: "temperate",
+    1: "tropical",
+    2: "arid",
+    3: "rocky",
+    4: "cold",
+}
+_SEA_BY_ENUM = {
+    0: "low",
+    1: "medium",
+    2: "high",
+}
+_ERA_BY_ENUM = {
+    0: "ancient",
+    1: "classical",
+    2: "medieval",
+    3: "renaissance",
+    4: "industrial",
+    5: "modern",
+    6: "future",
+}
+
 
 @dataclass(frozen=True)
 class SavePlayerSlot:
@@ -72,6 +103,13 @@ class Civ4SaveMeta:
     map_script: str = ""
     game_speed: str = ""  # marathon|epic|normal|quick
     game_turn: Optional[int] = None
+    world_size: str = ""  # duel|tiny|small|standard|large|huge
+    climate: str = ""
+    sea_level: str = ""
+    starting_era: str = ""
+    # Vanilla WorldInfo estimate for this world size (not exact custom/WB grids).
+    map_width: Optional[int] = None
+    map_height: Optional[int] = None
     leaders: list[str] = field(default_factory=list)
     # player eID -> turnActive (only when detection succeeded)
     turn_active: dict[int, bool] = field(default_factory=dict)
@@ -204,10 +242,16 @@ def _parse_init_core(header: bytes) -> Optional[dict]:
         # world, climate, sea, era, speed, timer, calendar
         if off + 28 > len(header):
             return None
-        _world, _climate, _sea, _era, speed_i, _timer, _cal = struct.unpack_from(
+        world_i, climate_i, sea_i, era_i, speed_i, _timer, _cal = struct.unpack_from(
             "<7i", header, off,
         )
         off += 28
+        world_size, map_w, map_h = "", None, None
+        if world_i in _WORLD_BY_ENUM:
+            world_size, map_w, map_h = _WORLD_BY_ENUM[world_i]
+        climate = _CLIMATE_BY_ENUM.get(climate_i, "")
+        sea_level = _SEA_BY_ENUM.get(sea_i, "")
+        starting_era = _ERA_BY_ENUM.get(era_i, "")
         ncustom = struct.unpack_from("<i", header, off)[0]
         off += 4
         nhidden = struct.unpack_from("<i", header, off)[0]
@@ -245,6 +289,12 @@ def _parse_init_core(header: bytes) -> Optional[dict]:
                 "game_speed": _SPEED_BY_ENUM.get(speed_i, ""),
                 "game_speed_raw": speed_i,
                 "game_turn": game_turn,
+                "world_size": world_size,
+                "climate": climate,
+                "sea_level": sea_level,
+                "starting_era": starting_era,
+                "map_width": map_w,
+                "map_height": map_h,
                 "leaders": leaders,
                 "num_mp": num_mp,
                 "score": score,
@@ -350,6 +400,12 @@ def parse_civ4_save_meta(path: Path | str) -> Optional[Civ4SaveMeta]:
         map_script=core.get("map_script") or "",
         game_speed=speed,
         game_turn=core.get("game_turn"),
+        world_size=core.get("world_size") or "",
+        climate=core.get("climate") or "",
+        sea_level=core.get("sea_level") or "",
+        starting_era=core.get("starting_era") or "",
+        map_width=core.get("map_width"),
+        map_height=core.get("map_height"),
         leaders=leaders,
         turn_active=turn_active,
     )

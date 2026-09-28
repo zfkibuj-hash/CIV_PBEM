@@ -131,6 +131,12 @@ Output: `dist/Civ4PBEMManager.exe` (~28 MB)
 
 ## Changelog
 
+### v5.0.28
+
+**Map summary in game details**
+- Under the game title: map script, world size with approximate tile grid (~W×H from vanilla WorldInfo), era, climate, sea level, speed
+- Read from the latest local Civ4 save (InitCore). Exact custom/WB tile counts are not available without a full map parser
+
 ### v5.0.27
 
 **Watchdog false upload prompt**
@@ -287,6 +293,11 @@ Aplikacja jest **koordynatorem**, nie klientem gry.
 3. Nowa gra → dodaj graczy → wybierz prędkość → skonfiguruj transport
 4. Eksportuj `.civ4pbem` **albo skopiuj kod zaproszenia** i wyślij innym graczom
 5. Graj turę → watchdog automatycznie wyśle save i powiadomi następnego gracza
+
+### Co nowego w v5.0.28
+
+- W szczegolach gry: skrypt mapy, rozmiar swiata z przyblizonymi tiles (~W×H z vanilla), era, klimat, morze, predkosc
+- Dane z InitCore ostatniego lokalnego save’a (dokladne W×H custom/WB bez pelnego parsera mapy nie da sie)
 
 ### Co nowego w v5.0.27
 

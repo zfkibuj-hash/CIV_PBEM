@@ -205,6 +205,15 @@ class MainWindow(QMainWindow):
         )
         right_layout.addWidget(self.header_label)
 
+        self.map_info_label = QLabel("")
+        self.map_info_label.setObjectName("map_info")
+        self.map_info_label.setWordWrap(True)
+        self.map_info_label.setStyleSheet(
+            "padding: 0 20px 8px 20px; color: #9e9e9e; font-size: 9pt;"
+        )
+        self.map_info_label.hide()
+        right_layout.addWidget(self.map_info_label)
+
         # Status banner
         self.status_banner = QLabel("")
         self.status_banner.setObjectName("banner_waiting")
@@ -516,6 +525,12 @@ class MainWindow(QMainWindow):
             f"{game.name}  -  {t('turn')} {game.calendar_turn()} "
             f"({game.calendar_year_str()})"
         )
+        map_line = game.map_details_line()
+        if map_line:
+            self.map_info_label.setText(map_line)
+            self.map_info_label.show()
+        else:
+            self.map_info_label.hide()
 
         # Empty history = never synced from FTP. Default index 0 looks like
         # "YOUR TURN" after import — that is a lie until Check fills history.
@@ -733,6 +748,8 @@ class MainWindow(QMainWindow):
         """Clear the right panel when no game is selected (e.g. after delete)."""
         self.btn_play_now.hide()
         self.header_label.setText(t("select_game"))
+        self.map_info_label.hide()
+        self.map_info_label.setText("")
         self.status_banner.setText("")
         self.status_banner.setObjectName("banner_waiting")
         self.player_order.clear()
@@ -1444,6 +1461,8 @@ class MainWindow(QMainWindow):
             self._update_game_view()
         else:
             self.header_label.setText(t("select_game"))
+            self.map_info_label.hide()
+            self.map_info_label.setText("")
 
     def _on_download(self):
         """Download save from remote."""
