@@ -45,6 +45,7 @@ echo [3/5] UPX wylaczony (Windows Smart App Control blokuje spakowane DLL-e Qt)
 echo.
 
 echo [4/5] Budowanie .exe...
+python tools\gen_version_info.py
 if exist "venv\Scripts\pyinstaller.exe" (
     set "PYINSTALLER=venv\Scripts\pyinstaller.exe"
 ) else (

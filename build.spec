@@ -140,6 +140,9 @@ a.datas = [
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# Windows FileVersion / ProductName (tools/gen_version_info.py)
+_version_file = 'version_info.txt' if os.path.isfile('version_info.txt') else None
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -163,4 +166,5 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='icon.ico',
+    version=_version_file,
 )

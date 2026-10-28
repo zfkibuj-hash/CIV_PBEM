@@ -345,4 +345,6 @@ Built entirely by AI (Claude / Kiro LLM) as pure vibecoding for fun. The human p
 
 You are welcome to report bugs and suggest features in the Issues tab. Just know that fixes depend on AI assistance, not a developer sitting behind the keyboard. If you know Python and want to contribute, pull requests are very welcome.
 
-Free to use, modify, and redistribute. MIT License.
+Free to use, modify, and redistribute under the [MIT License](LICENSE).
+
+See [PRIVACY.md](PRIVACY.md) and [SIGNING.md](SIGNING.md). Windows EXE builds run in [GitHub Actions](.github/workflows/build.yml).

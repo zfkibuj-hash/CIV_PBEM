@@ -8,6 +8,7 @@ dist_v*/
 build/
 build_v*/
 *.spec.bak
+version_info.txt
 .env
 saves/
 .pytest_cache/
